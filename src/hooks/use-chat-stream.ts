@@ -16,15 +16,111 @@ export function useChatStream(chatId: string | null) {
     enabled: !!chatId,
   });
 
+  // Abort stream when chatId changes to a DIFFERENT chat
+  useEffect(() => {
+    return () => {
+      // Only abort on unmount or when chatId actually changes
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+    };
+  }, [chatId]);
+
   const startStream = async (settings?: Partial<Settings>) => {
     if (!chatId) return;
 
+    console.log('[startStream] Starting stream for chat:', chatId);
+
+    // Abort any existing stream for this chat
     if (abortControllerRef.current) {
+      console.log('[startStream] Aborting previous stream');
       abortControllerRef.current.abort();
     }
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
+    const streamChatId = chatId; // Capture at start
+
+    // Define event handler inside startStream to have access to streamChatId
+    const handleSSEEvent = (eventType: string, data: any) => {
+      // Debug: log all SSE events
+      console.log('[SSE Event]', eventType, JSON.stringify(data).slice(0, 200));
+
+      switch (eventType) {
+        case 'status':
+          setStatus(data.message || '');
+          break;
+
+        case 'token.delta':
+          queryClient.setQueryData<Message[]>(['messages', streamChatId], (old) => {
+            const messages = old ?? [];
+            const lastMsg = messages[messages.length - 1];
+
+            if (lastMsg?.role === 'assistant' && !lastMsg.metadata?.final) {
+              return [
+                ...messages.slice(0, -1),
+                { ...lastMsg, content: lastMsg.content + (data.text || data.delta) }
+              ];
+            } else {
+              return [...messages, {
+                id: data.message_id || 'temp-assistant',
+                chatId: streamChatId,
+                role: 'assistant',
+                content: data.text || data.delta || '',
+                createdAt: new Date().toISOString(),
+              }];
+            }
+          });
+          break;
+
+        case 'message.final':
+          queryClient.setQueryData<Message[]>(['messages', streamChatId], (old) => {
+            const messages = old ?? [];
+            const lastMsg = messages[messages.length - 1];
+
+            if (lastMsg?.role === 'assistant') {
+              return [...messages.slice(0, -1), {
+                id: data.message_id || data.id,
+                chatId: streamChatId,
+                role: 'assistant',
+                content: data.content,
+                createdAt: new Date().toISOString(),
+                metadata: { final: true, ...data.usage },
+              }];
+            }
+
+            return [...messages, {
+              id: data.message_id || data.id || 'temp-assistant-final',
+              chatId: streamChatId,
+              role: 'assistant',
+              content: data.content || '',
+              createdAt: new Date().toISOString(),
+              metadata: { final: true, ...data.usage },
+            }];
+        });
+        setStatus('');
+        break;
+
+        case 'message.stop':
+          setStatus('');
+          break;
+
+        case 'inference.complete':
+          setStatus('');
+          break;
+
+        case 'chat.updated':
+          queryClient.invalidateQueries({ queryKey: ['chat', streamChatId] });
+          break;
+
+        case 'error':
+        case 'run.error':
+          toast.error(data.message || 'An error occurred');
+          setStatus('');
+          break;
+      }
+    };
 
     try {
       const response = await fetch(`${API_BASE_URL}/chats/${chatId}/run`, {
@@ -33,6 +129,7 @@ export function useChatStream(chatId: string | null) {
           'Content-Type': 'application/json',
           'Accept': 'text/event-stream',
         },
+        credentials: 'include',
         body: JSON.stringify({
           mode: settings?.mode || 'standard',
           auto: settings?.auto ?? true,
@@ -76,6 +173,8 @@ export function useChatStream(chatId: string | null) {
       const processLine = (rawLine: string) => {
         const line = rawLine.replace(/\r$/, '');
 
+        console.log('[SSE Line]', line.slice(0, 100));
+
         if (!line) {
           flushCurrentEvent();
           return;
@@ -88,6 +187,7 @@ export function useChatStream(chatId: string | null) {
 
         if (line.startsWith('event:')) {
           currentEvent = line.slice(6).trim() || 'message';
+          console.log('[SSE] Event type set to:', currentEvent);
           return;
         }
 
@@ -111,11 +211,26 @@ export function useChatStream(chatId: string | null) {
 
       // Handle any trailing line/event if the stream closes without a blank line.
       if (buffer.length > 0) {
-        processLine(buffer);
+        // Add newline to ensure last line is processed
+        buffer += '\n';
+        const lines = buffer.split('\n');
+        for (const line of lines) {
+          if (line.trim()) {
+            processLine(line);
+          }
+        }
       }
       flushCurrentEvent();
+
+      // Clear status when stream completes normally
+      setStatus('');
     } catch (err) {
-      if (err instanceof Error && err.name !== 'AbortError') {
+      if (err instanceof Error && err.name === 'AbortError') {
+        // Stream was aborted (e.g., user sent a new message) - reset status
+        setStatus('');
+        return;
+      }
+      if (err instanceof Error) {
         console.error('Stream error:', err);
         const errorMessage = err.message.includes('Failed to fetch')
           ? 'Network error. Please check your connection.'
@@ -123,74 +238,6 @@ export function useChatStream(chatId: string | null) {
         toast.error(errorMessage);
         setStatus('');
       }
-    }
-  };
-
-  const handleSSEEvent = (eventType: string, data: any) => {
-    switch (eventType) {
-      case 'status':
-        setStatus(data.message || '');
-        break;
-
-      case 'token.delta':
-        queryClient.setQueryData<Message[]>(['messages', chatId], (old) => {
-          const messages = old ?? [];
-          const lastMsg = messages[messages.length - 1];
-
-          if (lastMsg?.role === 'assistant' && !lastMsg.metadata?.final) {
-            return [
-              ...messages.slice(0, -1),
-              { ...lastMsg, content: lastMsg.content + (data.text || data.delta) }
-            ];
-          } else {
-            return [...messages, {
-              id: data.message_id || 'temp-assistant',
-              chatId: chatId!,
-              role: 'assistant',
-              content: data.text || data.delta || '',
-              createdAt: new Date().toISOString(),
-            }];
-          }
-        });
-        break;
-
-      case 'message.final':
-        queryClient.setQueryData<Message[]>(['messages', chatId], (old) => {
-          const messages = old ?? [];
-          const lastMsg = messages[messages.length - 1];
-
-          if (lastMsg?.role === 'assistant') {
-            return [...messages.slice(0, -1), {
-              id: data.message_id || data.id,
-              chatId: chatId!,
-              role: 'assistant',
-              content: data.content,
-              createdAt: new Date().toISOString(),
-              metadata: { final: true, ...data.usage },
-            }];
-          }
-
-          return [...messages, {
-            id: data.message_id || data.id || 'temp-assistant-final',
-            chatId: chatId!,
-            role: 'assistant',
-            content: data.content || '',
-            createdAt: new Date().toISOString(),
-            metadata: { final: true, ...data.usage },
-          }];
-        });
-        setStatus('');
-        break;
-
-      case 'chat.updated':
-        queryClient.invalidateQueries({ queryKey: ['chat', chatId] });
-        break;
-
-      case 'error':
-      case 'run.error':
-        toast.error(data.message || 'An error occurred');
-        setStatus('');
-        break;
     }
   };
 

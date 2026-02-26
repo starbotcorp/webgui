@@ -1,27 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminCookieName, verifyAdminCookieToken } from '@/lib/server/admin-cookie';
+import { getConsoleHosts } from '@/lib/console-hosts';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3737';
-
-function resolveConsoleHosts(): Set<string> {
-  const configured = String(process.env.ADMIN_CONSOLE_HOSTS || process.env.NEXT_PUBLIC_ADMIN_CONSOLE_HOSTS || '')
-    .split(',')
-    .map((entry) => entry.trim().toLowerCase())
-    .filter(Boolean);
-
-  if (configured.length > 0) {
-    return new Set(configured);
-  }
-
-  return new Set([
-    'console.sgauth0.com',
-    'www.console.sgauth0.com',
-    'console.starbot.cloud',
-    'www.console.starbot.cloud',
-  ]);
-}
-
-const CONSOLE_HOSTS = resolveConsoleHosts();
+const CONSOLE_HOSTS = getConsoleHosts();
 
 function normalizeHost(rawHost: string | null): string {
   if (!rawHost) return '';
@@ -32,7 +14,7 @@ const ADMIN_COOKIE_NAME = getAdminCookieName();
 const SESSION_COOKIE_NAME = 'starbot_auth';
 
 function isPublicPath(pathname: string): boolean {
-  return pathname === '/login' || pathname.startsWith('/api/auth') || pathname === '/signup';
+  return pathname === '/login' || pathname.startsWith('/api/auth') || pathname === '/signup' || pathname === '/error';
 }
 
 export async function proxy(request: NextRequest) {
@@ -86,11 +68,16 @@ export async function proxy(request: NextRequest) {
 
   // Verify token with backend
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+
     const response = await fetch(`${API_URL}/v1/auth/me`, {
       headers: {
         Authorization: `Bearer ${sessionCookie.value}`,
       },
+      signal: controller.signal,
     });
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       const redirectResponse = NextResponse.redirect(new URL('/login', request.url));
@@ -98,7 +85,10 @@ export async function proxy(request: NextRequest) {
       return redirectResponse;
     }
   } catch (e) {
-    // Backend unavailable - let through
+    // Backend unavailable - redirect to error page, don't let through
+    const errorUrl = new URL('/error', request.url);
+    errorUrl.searchParams.set('type', 'backend_unavailable');
+    return NextResponse.redirect(errorUrl);
   }
 
   return NextResponse.next();

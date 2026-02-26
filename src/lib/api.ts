@@ -1,6 +1,5 @@
 import { API_BASE_URL } from './config';
 import { z } from 'zod';
-import { readAuthSession } from './auth-session';
 
 export class ApiError extends Error {
   constructor(public status: number, public message: string, public data?: any) {
@@ -9,21 +8,61 @@ export class ApiError extends Error {
   }
 }
 
+// Retry logic with exponential backoff for transient failures
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  maxRetries: number = 3
+): Promise<Response> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+        credentials: 'include', // Include cookies for authentication
+      });
+      clearTimeout(timeoutId);
+      return response;
+    } catch (error) {
+      lastError = error as Error;
+      // Don't retry on abort (user cancelled)
+      if ((error as Error).name === 'AbortError') {
+        throw error;
+      }
+      // Only retry on network errors, not HTTP errors
+      if (attempt < maxRetries - 1) {
+        const delay = Math.pow(2, attempt) * 1000; // Exponential backoff: 1s, 2s, 4s
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+
+  throw lastError;
+}
+
 async function fetchApi<T>(path: string, options: RequestInit = {}, schema?: z.ZodSchema<T>): Promise<T> {
+  const requestId = Math.random().toString(36).slice(2, 8);
+  const bodyPreview = typeof options.body === 'string' ? options.body.slice(0, 100) : undefined;
+  console.log(`[fetchApi #${requestId}] Starting:`, { path, method: options.method, body: bodyPreview });
   const headers = new Headers(options.headers);
 
-  if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
+  // Only set Content-Type for requests with a body (not DELETE, etc.)
+  if (!headers.has('Content-Type') && !(options.body instanceof FormData) && options.body) {
     headers.set('Content-Type', 'application/json');
   }
 
-  // Add authorization header if we have a token
-  const session = readAuthSession();
-  if (session?.token) {
-    headers.set('Authorization', `Bearer ${session.token}`);
-  }
+  // Authentication is handled via httpOnly cookies (credentials: 'include')
+  // No need to manually add Authorization header - it's automatic with cookies
 
   const url = `${API_BASE_URL}${path}`;
-  const response = await fetch(url, { ...options, headers });
+  const response = await fetchWithRetry(url, { ...options, headers });
+
+  console.log(`[fetchApi #${requestId}] Response:`, { path, status: response.status, statusText: response.statusText });
 
   if (!response.ok) {
     let errorMessage = `API Error: ${response.status} ${response.statusText}`;
@@ -53,8 +92,9 @@ async function fetchApi<T>(path: string, options: RequestInit = {}, schema?: z.Z
   if (schema) {
       const result = schema.safeParse(data);
       if (!result.success) {
-          console.error('Validation Error:', result.error);
-          throw new ApiError(response.status, 'Response validation failed');
+          console.error('Validation Error:', result.error.format());
+          console.error('Response data that failed validation:', data);
+          throw new ApiError(response.status, 'Response validation failed: ' + JSON.stringify(result.error.flatten()));
       }
       return result.data;
   }
@@ -64,7 +104,10 @@ async function fetchApi<T>(path: string, options: RequestInit = {}, schema?: z.Z
 
 export const api = {
   get: <T>(path: string, schema?: z.ZodSchema<T>) => fetchApi<T>(path, { method: 'GET' }, schema),
-  post: <T>(path: string, body: any, schema?: z.ZodSchema<T>) => fetchApi<T>(path, { method: 'POST', body: JSON.stringify(body) }, schema),
+  post: <T>(path: string, body: any, schema?: z.ZodSchema<T>) => {
+    console.log('[API POST]', { path, body });
+    return fetchApi<T>(path, { method: 'POST', body: JSON.stringify(body) }, schema);
+  },
   put: <T>(path: string, body: any, schema?: z.ZodSchema<T>) => fetchApi<T>(path, { method: 'PUT', body: JSON.stringify(body) }, schema),
   delete: <T>(path: string) => fetchApi<T>(path, { method: 'DELETE' }),
   patch: <T>(path: string, body: any, schema?: z.ZodSchema<T>) => fetchApi<T>(path, { method: 'PATCH', body: JSON.stringify(body) }, schema),

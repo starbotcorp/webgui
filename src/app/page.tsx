@@ -21,7 +21,9 @@ export default function Page() {
   // Check authentication on mount
   useEffect(() => {
     const session = readAuthSession();
-    if (!session || !session.token || session.role === 'guest') {
+    // Token is stored in httpOnly cookie, not in session
+    // Just check if we have session data with email
+    if (!session || !session.email) {
       router.push('/login');
     } else {
       setChecking(false);

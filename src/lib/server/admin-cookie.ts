@@ -84,7 +84,11 @@ export function evaluateAdmin(email: string, providedCode?: string): boolean {
   const requiredCode = String(process.env.ADMIN_CONSOLE_CODE || '').trim();
   if (!requiredCode) return true;
 
-  return String(providedCode || '').trim() === requiredCode;
+  const provided = String(providedCode || '').trim();
+
+  // Timing-safe comparison to prevent timing attacks
+  if (provided.length !== requiredCode.length) return false;
+  return isTimingSafeEqual(provided, requiredCode);
 }
 
 export async function issueAdminCookieToken(email: string): Promise<string | null> {

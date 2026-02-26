@@ -6,40 +6,36 @@ import { ArrowLeft, KeyRound, Lock, Mail } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { syncServerSession, writeAuthSession } from '@/lib/auth-session';
+import { isConsoleHost } from '@/lib/console-hosts';
 import { toast } from 'sonner';
 
 function subscribeLocation() {
   return () => {};
 }
 
-function getConsoleHosts(): Set<string> {
-  const configured = String(process.env.NEXT_PUBLIC_ADMIN_CONSOLE_HOSTS || '')
-    .split(',')
-    .map((entry) => entry.trim().toLowerCase())
-    .filter(Boolean);
-
-  if (configured.length > 0) {
-    return new Set(configured);
-  }
-
-  return new Set([
-    'console.sgauth0.com',
-    'www.console.sgauth0.com',
-    'console.starbot.cloud',
-    'www.console.starbot.cloud',
-  ]);
-}
-
 function readIsConsoleHost() {
   if (typeof window === 'undefined') return false;
-  const host = window.location.hostname.toLowerCase();
-  return getConsoleHosts().has(host);
+  return isConsoleHost(window.location.hostname);
 }
 
 function normalizeNextPath(value: string | null, fallback: string): string {
   if (!value) return fallback;
+
+  // Must start with single /
   if (!value.startsWith('/')) return fallback;
-  if (value.startsWith('//')) return fallback;
+
+  // Block double slashes and backslashes
+  if (value.startsWith('//') || value.includes('\\')) return fallback;
+
+  // Block URL-like patterns (e.g., /https://evil.com)
+  if (/^\/[a-z]+:\/\//i.test(value)) return fallback;
+
+  // Block protocol-relative URLs and dangerous prefixes
+  if (value.startsWith('/.') || value.startsWith('/~')) return fallback;
+
+  // Only allow safe characters in path
+  if (!/^\/[a-zA-Z0-9\-_/.?=&%]*$/.test(value)) return fallback;
+
   return value;
 }
 
@@ -76,7 +72,7 @@ export default function LoginPage() {
       name: displayName,
       email: email.trim(),
       loggedInAt: new Date().toISOString(),
-      token,
+      // Token is handled via httpOnly cookie - not stored in localStorage
       role,
     });
 

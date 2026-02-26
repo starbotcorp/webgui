@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import { z } from 'zod';
 import {
   evaluateAdmin,
   getAdminCookieName,
   issueAdminCookieToken,
 } from '@/lib/server/admin-cookie';
+
+const CSRF_COOKIE_NAME = 'csrf_token';
 
 const SessionBodySchema = z.object({
   email: z.string().email(),
@@ -34,7 +37,36 @@ function resolveApiUrl(endpoint: string): string {
   return endpoint;
 }
 
+// CSRF validation helper - uses async cookies() from next/headers
+async function validateCsrfToken(headerToken: string | null): Promise<boolean> {
+  if (!headerToken) return false;
+
+  const cookieStore = await cookies();
+  const cookie = cookieStore.get(CSRF_COOKIE_NAME);
+
+  if (!cookie) return false;
+
+  // Timing-safe comparison
+  const cookieValue = cookie.value;
+  if (cookieValue.length !== headerToken.length) {
+    return false;
+  }
+
+  let diff = 0;
+  for (let i = 0; i < cookieValue.length; i++) {
+    diff |= cookieValue.charCodeAt(i) ^ headerToken.charCodeAt(i);
+  }
+
+  return diff === 0;
+}
+
 export async function POST(request: Request) {
+  // Validate CSRF token for security
+  const csrfHeader = request.headers.get('x-csrf-token');
+  if (!await validateCsrfToken(csrfHeader)) {
+    return NextResponse.json({ error: 'Invalid CSRF token' }, { status: 403 });
+  }
+
   let body: z.infer<typeof SessionBodySchema>;
   try {
     body = SessionBodySchema.parse(await request.json());

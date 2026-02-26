@@ -11,9 +11,9 @@ export const ProjectSchema = z.object({
 
 export const FolderSchema = z.object({
   id: z.string(),
-  projectId: z.string(),
+  projectId: z.string().optional(),
   name: z.string(),
-  createdAt: z.string(),
+  createdAt: z.string().optional(),
   chats: z.array(z.object({
     id: z.string(),
     title: z.string(),

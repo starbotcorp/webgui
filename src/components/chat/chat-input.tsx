@@ -1,4 +1,4 @@
-import { KeyboardEvent } from 'react';
+import { KeyboardEvent, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Send } from 'lucide-react';
@@ -11,11 +11,23 @@ interface ChatInputProps {
 
 export function ChatInput({ onSend, disabled }: ChatInputProps) {
   const { draftInput, setDraftInput } = useUIStore();
-  
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Focus textarea when component mounts or becomes enabled
+  useEffect(() => {
+    if (!disabled && textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  }, [disabled]);
+
   const handleSend = () => {
     if (draftInput.trim() && !disabled) {
       onSend(draftInput);
       setDraftInput('');
+      // Re-focus after sending
+      setTimeout(() => {
+        textareaRef.current?.focus();
+      }, 0);
     }
   };
 
@@ -30,6 +42,7 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
     <div className="border-t border-slate-200/80 bg-white/85 px-4 py-4 backdrop-blur">
       <div className="max-w-4xl mx-auto flex gap-2 items-end">
         <Textarea
+          ref={textareaRef}
           value={draftInput}
           onChange={(e) => setDraftInput(e.target.value)}
           onKeyDown={handleKeyDown}

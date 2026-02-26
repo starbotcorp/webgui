@@ -2,7 +2,8 @@ export interface AuthSession {
   email: string;
   name: string;
   loggedInAt: string;
-  token?: string;
+  // Token is NOT stored here - it's in httpOnly cookie for security
+  // Including it here would expose it to XSS attacks
   role?: 'admin' | 'user' | 'guest';
 }
 
@@ -29,7 +30,14 @@ export function readAuthSession(): AuthSession | null {
 
 export function writeAuthSession(session: AuthSession) {
   if (!isBrowser()) return;
-  localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(session));
+  // Only store non-sensitive display info in localStorage
+  // Token is handled via httpOnly cookie (already set by server)
+  localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify({
+    email: session.email,
+    name: session.name,
+    loggedInAt: session.loggedInAt,
+    role: session.role,
+  }));
   window.dispatchEvent(new Event(AUTH_CHANGED_EVENT));
 }
 
@@ -47,16 +55,32 @@ export async function syncServerSession(input: {
 }): Promise<{ role: 'admin' | 'user'; token: string }> {
   if (!isBrowser()) return { role: 'user', token: '' };
 
+  // Get CSRF token first
+  let csrfToken = '';
+  try {
+    const csrfResponse = await fetch('/api/auth/csrf');
+    if (csrfResponse.ok) {
+      const csrfData = await csrfResponse.json();
+      csrfToken = csrfData.token;
+    }
+  } catch {
+    // CSRF token fetch failed, continue without it
+  }
+
   // Validate against backend
   const response = await fetch('/api/auth/session', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
+    },
     body: JSON.stringify({
       email: input.email,
       name: input.name,
       adminCode: input.adminCode,
       password: input.password,
     }),
+    credentials: 'include',
   });
 
   if (!response.ok) {
@@ -70,29 +94,44 @@ export async function syncServerSession(input: {
 export async function clearServerSession() {
   if (!isBrowser()) return;
 
-  // Get token to invalidate on backend
-  const session = readAuthSession();
-
-  try {
-    // Invalidate on backend
-    if (session?.token) {
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3737';
-      await fetch(`${API_URL}/v1/auth/logout`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${session.token}`,
-        },
-      });
-    }
-  } catch {
-    // no-op
-  }
-
   try {
     await fetch('/api/auth/session', {
       method: 'DELETE',
+      credentials: 'include',
     });
   } catch {
     // no-op
   }
+}
+
+// Token refresh mechanism
+export async function refreshSession(): Promise<boolean> {
+  if (!isBrowser()) return false;
+
+  try {
+    const response = await fetch('/api/auth/session/refresh', {
+      method: 'POST',
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      clearAuthSession();
+      return false;
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Hook for periodic session refresh
+export function useSessionRefresh() {
+  if (typeof window === 'undefined') return;
+
+  const interval = setInterval(() => {
+    refreshSession();
+  }, 5 * 60 * 1000); // Every 5 minutes
+
+  return () => clearInterval(interval);
 }

@@ -12,9 +12,11 @@ Live at `https://starbot.cloud/`. Runs on port 3001 behind nginx.
 npm install              # Install deps
 npm run dev              # Dev server on port 3000
 npm run build            # Production build (standalone output)
-npm start                # Run production build
+npm start                # Run production build (port 3001)
 npm run lint             # ESLint
 ```
+
+No test suite is configured.
 
 ## Deploy
 
@@ -75,73 +77,23 @@ Activated by hostname matching (e.g. `console.starbot.cloud`). Controlled by `NE
 
 ```
 src/
-  proxy.ts                      — Next.js middleware, proxies /v1/* to API
+  proxy.ts            — Next.js middleware, proxies /v1/* to API
+  app/                — Next.js App Router pages
+    admin/           — Admin console pages
+    api/auth/        — Session API route
+  components/        — React components
+    chat/            — Chat UI components
+    ui/              — Shared UI primitives
+  hooks/              — Custom React hooks (use-chat-stream)
+  lib/                — Utilities and API clients
+    api/             — Typed API functions
+  store/              — Zustand state management
 
-  app/
-    layout.tsx                  — Root layout
-    page.tsx                    — Main chat page (/)
-    login/page.tsx              — Login
-    signup/page.tsx             — Signup
-    account/page.tsx            — Account settings
-    admin/                      — Admin console pages
-      layout.tsx
-      page.tsx
-      identity/page.tsx
-      providers/page.tsx
-    api/auth/session/route.ts   — Session API route
+public/               — Static assets
 
-  components/
-    sidebar.tsx                 — Project/chat sidebar navigation
-    settings-panel.tsx          — Settings UI
-    logs-panel.tsx              — Debug logs panel
-    network-status.tsx          — Connection status indicator
-    account-menu.tsx            — User menu dropdown
-    error-boundary.tsx          — React error boundary
-
-    chat/
-      chat-view.tsx             — Main chat container
-      chat-input.tsx            — Message input with submit
-      message-list.tsx          — Scrollable message history
-      markdown-content.tsx      — Markdown rendering
-      code-block.tsx            — Syntax-highlighted code blocks
-      message-actions.tsx       — Copy, retry, etc.
-      message-skeleton.tsx      — Loading skeleton
-
-    ui/                         — Shared UI primitives (button, card, dialog, etc.)
-
-    providers/
-      query-provider.tsx        — React Query provider
-      toast-provider.tsx        — Toast notifications
-
-    admin/
-      admin-shell.tsx           — Admin console wrapper
-
-  hooks/
-    use-chat-stream.ts          — SSE streaming hook for chat
-
-  lib/
-    api.ts                      — Base API client
-    api/
-      chats.ts                  — Chat API functions
-      projects.ts               — Project API functions
-      messages.ts               — Message API functions
-      folders.ts                — Folder API functions
-      memory.ts                 — Memory API functions
-    auth-session.ts             — Token/session management
-    config.ts                   — Runtime config
-    types.ts                    — Shared TypeScript types
-    utils.ts                    — Utility functions (cn, etc.)
-    server/
-      admin-cookie.ts           — Admin auth cookie handling
-
-  store/
-    ui-store.ts                 — Zustand UI state
-
-public/                         — Static assets (SVG icons)
-
-deploy/
-  starbot-webgui.service        — Systemd unit file
-  nginx-starbot.cloud.conf      — Nginx reverse proxy config
+deploy/               — Deployment configs (systemd, nginx)
+scripts/              — Build helpers
+Dockerfile            — Container build (alternative to deploy.sh)
 ```
 
 ---
@@ -177,6 +129,7 @@ If static assets 404 in production, the copy step was missed.
 
 ## Sibling Repos
 
-- **API** — `/home/stella/starbot-api` (GitHub: `starbot-api`) — Fastify backend on port 3737
-- **TUI** — Rust CLI client in the original monorepo at `/home/stella/projects/starbot/Starbot_TUI`
+- **API** — https://github.com/starbotcorp/api — Fastify backend on port 3737
+- **WebGUI** — https://github.com/starbotcorp/webgui — This Next.js frontend
+- **TUI** — Rust CLI client at `/home/stella/projects/starbot/Starbot_TUI`
 - **Monorepo** (reference) — `/home/stella/projects/starbot`

@@ -61,42 +61,47 @@ export function ChatView() {
   });
 
   const sendMutation = useMutation({
-    mutationFn: (content: string) => {
+    mutationFn: async (content: string) => {
       if (!selectedChatId) throw new Error('No chat selected');
-      return messagesApi.send(selectedChatId, content, 'user');
+
+      const response = await fetch(`/v1/chats/${selectedChatId}/messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({ role: 'user', content }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+
+      const data = await response.json();
+      return data.message;
     },
-    onMutate: async (content) => {
-        // Optimistic update: add user message to UI immediately
-        if (!selectedChatId) return;
-
-        await queryClient.cancelQueries({ queryKey: ['messages', selectedChatId] });
-
-        const previousMessages = queryClient.getQueryData(['messages', selectedChatId]);
-
-        queryClient.setQueryData(['messages', selectedChatId], (old: Message[] = []) => [
-            ...old,
+    onSuccess: (data) => {
+      if (selectedChatId) {
+        queryClient.setQueryData(['messages', selectedChatId], (old) => {
+          const messages = (old as Message[]) || [];
+          return [
+            ...messages,
             {
-                id: 'temp-user',
-                chatId: selectedChatId,
-                role: 'user',
-                content,
-                createdAt: new Date().toISOString(),
+              id: data.id,
+              chatId: selectedChatId,
+              role: 'user',
+              content: data.content,
+              createdAt: data.createdAt || new Date().toISOString(),
             },
-        ]);
-
-        return { previousMessages };
+          ];
+        });
+        startStream(settings);
+      }
     },
-    onSuccess: () => {
-        // After message is sent, trigger the assistant response
-        if (selectedChatId) {
-            startStream(settings);
-        }
+    onError: (err) => {
+      console.error('[sendMutation] Error:', err);
     },
-    onError: (err, content, context) => {
-        if (selectedChatId && context?.previousMessages) {
-            queryClient.setQueryData(['messages', selectedChatId], context.previousMessages);
-        }
-    }
   });
 
   const deleteMutation = useMutation({
@@ -217,7 +222,7 @@ export function ChatView() {
         onDeleteMessage={handleDeleteMessage}
         onRegenerateMessage={handleRegenerateMessage}
       />
-      <ChatInput onSend={handleSend} disabled={!!status} />
+      <ChatInput onSend={handleSend} disabled={!!status || sendMutation.isPending} />
     </div>
   );
 }

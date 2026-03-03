@@ -6,17 +6,18 @@ import { Sidebar } from '@/components/sidebar';
 import { ChatView } from '@/components/chat/chat-view';
 import { SettingsPanel } from '@/components/settings-panel';
 import { LogsPanel } from '@/components/logs-panel';
-import { AccountMenu } from '@/components/account-menu';
+import { InboxPanel } from '@/components/inbox-panel';
+import { DashboardPanel } from '@/components/dashboard-panel';
 import { useUIStore } from '@/store/ui-store';
 import { readAuthSession } from '@/lib/auth-session';
-import { Button } from '@/components/ui/button';
-import { Menu } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Settings } from 'lucide-react';
 
 export default function Page() {
   const router = useRouter();
-  const { isSidebarOpen, toggleSidebar } = useUIStore();
+  const { isSidebarOpen, toggleSidebar, selectedView, selectedChatId } = useUIStore();
   const [checking, setChecking] = useState(true);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
 
   // Check authentication on mount
   useEffect(() => {
@@ -56,7 +57,7 @@ export default function Page() {
               "md:relative md:z-0",
               isSidebarOpen
                 ? "fixed md:relative w-[18.5rem] md:w-[18.5rem]"
-                : "w-0 md:w-0 overflow-hidden"
+                : "fixed md:relative w-[4rem] md:w-[4rem]"
           )}>
             <Sidebar />
           </div>
@@ -64,26 +65,73 @@ export default function Page() {
           {/* Main Content */}
           <div className="flex-1 flex flex-col relative min-w-0 rounded-3xl border border-slate-200/80 bg-white/80 shadow-[0_20px_45px_rgba(15,23,42,0.08)] backdrop-blur overflow-hidden">
             <header className="h-14 border-b border-slate-200/80 flex items-center justify-between px-4 bg-white/70">
-                <div className="flex items-center gap-4">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={toggleSidebar}
-                      aria-label="Toggle sidebar"
-                      className="rounded-xl text-slate-700 hover:bg-slate-100"
-                    >
-                        <Menu className="h-4 w-4" />
-                    </Button>
-                    <div>
-                      <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Workspace</p>
-                      <h1 className="font-semibold text-slate-900 leading-tight">Starbot</h1>
-                    </div>
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Workspace</p>
+                  <h1 className="font-semibold text-slate-900 leading-tight">
+                    {selectedView === 'inbox' ? 'Inbox' :
+                     selectedView === 'dashboard' ? 'Dashboard' :
+                     selectedChatId ? 'Chat' : 'Starbot'}
+                  </h1>
                 </div>
-                <AccountMenu />
+                {selectedView === 'chat' && (
+                  <button
+                    onClick={() => setShowSettingsModal(true)}
+                    className="p-2 rounded-lg hover:bg-slate-100 transition-colors"
+                    title="Chat Settings"
+                  >
+                    <Settings className="h-5 w-5 text-slate-600" />
+                  </button>
+                )}
             </header>
 
+            {/* Settings Modal */}
+            {showSettingsModal && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 backdrop-blur-sm p-4">
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-lg p-6 max-w-md w-full">
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-lg font-semibold text-slate-900">Chat Settings</h2>
+                    <button
+                      onClick={() => setShowSettingsModal(false)}
+                      className="text-slate-500 hover:text-slate-700"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        Delete All Messages
+                      </label>
+                      <p className="text-sm text-slate-600 mb-2">
+                        Clear all messages from this chat thread and restart it as a fresh onboarding conversation.
+                      </p>
+                      <button
+                        onClick={async () => {
+                          if (!confirm('Delete all messages in this chat? This cannot be undone.')) return;
+                          if (!selectedChatId) return;
+                          try {
+                            await fetch(`/api/chats/${selectedChatId}/messages`, { method: 'DELETE' });
+                            // Navigate to refresh the chat view
+                            window.location.reload();
+                          } catch (error) {
+                            console.error('Failed to delete messages:', error);
+                            alert('Failed to delete messages. Please try again.');
+                          }
+                        }}
+                        className="w-full px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                      >
+                        Delete All Messages
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <main className="flex-1 overflow-hidden relative">
-                <ChatView />
+                {selectedView === 'inbox' && <InboxPanel />}
+                {selectedView === 'dashboard' && <DashboardPanel />}
+                {selectedView === 'chat' && <ChatView />}
                 <SettingsPanel />
                 <LogsPanel />
             </main>

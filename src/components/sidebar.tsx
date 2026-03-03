@@ -1,27 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { chatsApi } from '@/lib/api/chats';
 import { foldersApi } from '@/lib/api/folders';
 import { projectsApi } from '@/lib/api/projects';
 import { useUIStore } from '@/store/ui-store';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import {
   DndContext,
   closestCenter,
@@ -35,30 +21,46 @@ import {
   arrayMove,
   SortableContext,
   sortableKeyboardCoordinates,
-  useSortable,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
-import { Plus, MessageSquare, Folder as FolderIcon, ChevronDown, ChevronRight, Trash2, MoreVertical, Pencil, Loader2 } from 'lucide-react';
+import { Plus, MessageSquare, Folder as FolderIcon, ChevronDown, ChevronRight, Trash2, MoreVertical, Pencil, Loader2, Inbox, LayoutDashboard, Menu, Home } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { toast } from 'sonner';
-import { ApiError } from '@/lib/api';
 import { readAuthSession } from '@/lib/auth-session';
 import { Chat } from '@/lib/types';
+import { useSidebarMutations } from './sidebar/use-sidebar-mutations';
+import { AccountMenu, AccountMenuIcon } from './account-menu';
+import { SortableChatItem } from './sidebar/sidebar-chat-item';
+import {
+  CreateFolderDialog,
+  DeleteFolderDialog,
+  DeleteChatDialog,
+  RenameChatDialog,
+} from './sidebar/sidebar-dialogs';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { useRouter } from 'next/navigation';
 
 export function Sidebar() {
+  const router = useRouter();
   const {
     selectedChatId,
     setSelectedChatId,
-    isSidebarOpen
+    isSidebarOpen,
+    selectedView,
+    setSelectedView,
+    toggleSidebar,
   } = useUIStore();
 
-  const queryClient = useQueryClient();
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [localChats, setLocalChats] = useState<Chat[]>([]);
   const [isMounted, setIsMounted] = useState(false);
 
-  // Dialog states for better UX (replacing prompt/confirm)
+  // Dialog states
   const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [folderToDelete, setFolderToDelete] = useState<string | null>(null);
@@ -66,7 +68,6 @@ export function Sidebar() {
   const [chatToRename, setChatToRename] = useState<{ id: string; currentTitle: string } | null>(null);
   const [newChatTitle, setNewChatTitle] = useState('');
 
-  // Prevent SSR issues with dnd-kit
   useEffect(() => {
     setIsMounted(true);
   }, []);
@@ -105,87 +106,34 @@ export function Sidebar() {
     enabled: !!currentProjectId,
   });
 
-  const createChatMutation = useMutation({
-    mutationFn: async ({ title, folderId }: { title: string; folderId?: string }) => {
-      if (!userEmail) throw new Error('Not logged in');
-
-      let projectId = currentProjectId;
-
-      if (!projectId) {
-        const project = await projectsApi.create({ name: 'My Project', email: userEmail });
-        projectId = project.id;
-      }
-
-      return chatsApi.create(projectId, { title, folderId, clientSource: 'webgui' });
-    },
-    onSuccess: (newChat) => {
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
-      if (currentProjectId) {
-        queryClient.invalidateQueries({ queryKey: ['chats', currentProjectId] });
-      }
-      setSelectedChatId(newChat.id);
-    },
-    onError: (error) => {
-      const message = error instanceof ApiError
-        ? error.message
-        : error instanceof Error
-          ? error.message
-          : 'Failed to create chat';
-      toast.error(message);
-    },
+  // Get main thread (isMain thread) - create if doesn't exist
+  const { data: mainThread, isLoading: mainThreadLoading } = useQuery({
+    queryKey: ['main-thread', currentProjectId],
+    queryFn: () => currentProjectId ? chatsApi.getMainOrCreate() : Promise.resolve(null),
+    enabled: !!currentProjectId,
   });
 
-  const createFolderMutation = useMutation({
-    mutationFn: async (name: string) => {
-      if (!currentProjectId) throw new Error('No project selected');
-      return foldersApi.create(currentProjectId, { name });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['folders', currentProjectId] });
-      toast.success('Folder created');
-    },
-    onError: (error) => {
-      const message = error instanceof ApiError
-        ? error.message
-        : error instanceof Error
-          ? error.message
-          : 'Failed to create folder';
-      toast.error(message);
-    },
-  });
+  // Auto-open main thread when first created (onboarding)
+  useEffect(() => {
+    if (mainThread && mainThread.clientSource === 'webgui' && !localStorage.getItem('mainThreadOpened')) {
+      // Mark as opened to avoid re-opening
+      localStorage.setItem('mainThreadOpened', 'true');
+      // Auto-select main thread and switch to chat view
+      setSelectedChatId(mainThread.id);
+      setSelectedView('chat');
+    }
+  }, [mainThread]);
 
-  const deleteFolderMutation = useMutation({
-    mutationFn: (id: string) => foldersApi.delete(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['folders', currentProjectId] });
-      queryClient.invalidateQueries({ queryKey: ['chats', currentProjectId] });
-      toast.success('Folder deleted (chats moved to root)');
-    },
-    onError: (error) => {
-      toast.error('Failed to delete folder');
-    },
-  });
-
-  const deleteChatMutation = useMutation({
-    mutationFn: (id: string) => chatsApi.delete(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['chats', currentProjectId] });
-      toast.success('Chat deleted');
-    },
-    onError: () => {
-      toast.error('Failed to delete chat');
-    },
-  });
-
-  const renameChatMutation = useMutation({
-    mutationFn: ({ id, title }: { id: string; title: string }) => chatsApi.update(id, { title }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['chats', currentProjectId] });
-      toast.success('Chat renamed');
-    },
-    onError: () => {
-      toast.error('Failed to rename chat');
-    },
+  const {
+    createChatMutation,
+    createFolderMutation,
+    deleteFolderMutation,
+    deleteChatMutation,
+    renameChatMutation,
+  } = useSidebarMutations({
+    currentProjectId,
+    userEmail,
+    onChatCreated: setSelectedChatId,
   });
 
   const toggleFolder = (folderId: string) => {
@@ -204,32 +152,9 @@ export function Sidebar() {
     createChatMutation.mutate({ title: 'New Chat', folderId });
   };
 
-  const handleCreateFolder = () => {
-    setIsCreateFolderOpen(true);
-  };
-
-  const confirmCreateFolder = () => {
-    if (newFolderName.trim()) {
-      createFolderMutation.mutate(newFolderName.trim(), {
-        onSuccess: () => {
-          setNewFolderName('');
-          setIsCreateFolderOpen(false);
-        },
-      });
-    }
-  };
-
   const handleDeleteFolder = (e: React.MouseEvent, folderId: string) => {
     e.stopPropagation();
     setFolderToDelete(folderId);
-  };
-
-  const confirmDeleteFolder = () => {
-    if (folderToDelete) {
-      deleteFolderMutation.mutate(folderToDelete, {
-        onSuccess: () => setFolderToDelete(null),
-      });
-    }
   };
 
   const handleDeleteChat = (e: React.MouseEvent, chatId: string, chatTitle: string) => {
@@ -237,29 +162,10 @@ export function Sidebar() {
     setChatToDelete({ id: chatId, title: chatTitle });
   };
 
-  const confirmDeleteChat = () => {
-    if (chatToDelete) {
-      deleteChatMutation.mutate(chatToDelete.id, {
-        onSuccess: () => setChatToDelete(null),
-      });
-    }
-  };
-
   const handleRenameChat = (e: React.MouseEvent, chatId: string, currentTitle: string) => {
     e.stopPropagation();
     setChatToRename({ id: chatId, currentTitle });
     setNewChatTitle(currentTitle);
-  };
-
-  const confirmRenameChat = () => {
-    if (chatToRename && newChatTitle.trim() && newChatTitle !== chatToRename.currentTitle) {
-      renameChatMutation.mutate({ id: chatToRename.id, title: newChatTitle.trim() }, {
-        onSuccess: () => {
-          setChatToRename(null);
-          setNewChatTitle('');
-        },
-      });
-    }
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -293,84 +199,126 @@ export function Sidebar() {
     }
   });
 
-  // Sortable chat item component
-  function SortableChatItem({ chat, isSelected }: { chat: Chat; isSelected: boolean }) {
-    const {
-      attributes,
-      listeners,
-      setNodeRef,
-      transform,
-      transition,
-      isDragging,
-    } = useSortable({ id: chat.id });
-
-    const style = {
-      transform: CSS.Transform.toString(transform),
-      transition,
-    };
-
+  // Collapsed state: show minimal sidebar with toggle and view icons
+  if (!isSidebarOpen) {
     return (
-      <div
-        ref={setNodeRef}
-        style={style}
-        className={cn(
-          "flex items-center group",
-          isDragging && "opacity-50"
-        )}
-      >
-        <Button
-          variant="ghost"
-          className={cn(
-            "flex-1 justify-start font-normal h-10 rounded-xl px-2 pr-1",
-            isSelected
-              ? "bg-slate-900 text-white hover:bg-slate-800 hover:text-white"
-              : "text-slate-700 hover:bg-slate-100"
-          )}
-          onClick={() => setSelectedChatId(chat.id)}
-          {...attributes}
-          {...listeners}
-        >
-          <MessageSquare className="mr-2 h-4 w-4 shrink-0" />
-          <span className="truncate flex-1 text-left">{chat.title}</span>
-        </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 hover:bg-slate-100"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <MoreVertical className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-40">
-            <DropdownMenuItem onClick={(e) => handleRenameChat(e, chat.id, chat.title)}>
-              <Pencil className="mr-2 h-4 w-4" />
-              Rename
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={(e) => handleDeleteChat(e, chat.id, chat.title)}
-              className="text-red-600 focus:text-red-600"
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              Delete
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+      <aside className="h-full w-full rounded-3xl border border-slate-200/80 bg-white/80 shadow-[0_16px_40px_rgba(15,23,42,0.08)] backdrop-blur supports-[backdrop-filter]:bg-white/65 flex flex-col overflow-visible">
+        <div className="px-2 py-4 border-b border-slate-200/80 bg-gradient-to-b from-slate-50 to-white">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggleSidebar}
+            aria-label="Toggle sidebar"
+            className="rounded-xl text-slate-700 hover:bg-slate-100 h-8 w-8 mx-auto flex"
+          >
+            <Menu className="h-4 w-4" />
+          </Button>
+        </div>
+
+        {/* Collapsed view icons */}
+        <div className="flex-1 flex flex-col items-center gap-2 py-3">
+          {/* Main thread button */}
+          <Button
+            variant={selectedView === 'main' ? 'default' : 'ghost'}
+            onClick={() => {
+              if (mainThread) {
+                setSelectedChatId(mainThread.id);
+                setSelectedView('chat');
+              }
+            }}
+            size="icon"
+            aria-label="Main thread"
+            className="rounded-xl"
+          >
+            <Home className="h-5 w-5" />
+          </Button>
+          <Button
+            variant={selectedView === 'inbox' ? 'default' : 'ghost'}
+            onClick={() => setSelectedView('inbox')}
+            size="icon"
+            aria-label="Inbox"
+            className="rounded-xl"
+          >
+            <Inbox className="h-5 w-5" />
+          </Button>
+          <Button
+            variant={selectedView === 'dashboard' ? 'default' : 'ghost'}
+            onClick={() => setSelectedView('dashboard')}
+            size="icon"
+            aria-label="Dashboard"
+            className="rounded-xl"
+          >
+            <LayoutDashboard className="h-5 w-5" />
+          </Button>
+          <div className="flex-1" />
+          <AccountMenuIcon />
+        </div>
+      </aside>
     );
   }
 
-  if (!isSidebarOpen) return null;
-
   return (
     <aside className="h-full w-full rounded-3xl border border-slate-200/80 bg-white/80 shadow-[0_16px_40px_rgba(15,23,42,0.08)] backdrop-blur supports-[backdrop-filter]:bg-white/65 flex flex-col overflow-visible">
+      {/* Header with branding and toggle */}
       <div className="px-4 py-4 border-b border-slate-200/80 bg-gradient-to-r from-slate-50 to-white">
-        <div className="mb-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Starbot</p>
-          <h2 className="text-sm font-semibold text-slate-900">Conversations</h2>
+        <div className="flex items-center gap-3 mb-3">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggleSidebar}
+            aria-label="Toggle sidebar"
+            className="rounded-xl text-slate-700 hover:bg-slate-100 h-8 w-8 flex-shrink-0"
+          >
+            <Menu className="h-4 w-4" />
+          </Button>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Starbot</p>
+            <h2 className="text-sm font-semibold text-slate-900">Conversations</h2>
+          </div>
         </div>
+
+        {/* Main Thread - Special thread at top */}
+        <div className="mb-3">
+          <Button
+            variant={selectedView === 'main' ? 'default' : 'outline'}
+            onClick={() => {
+              if (mainThread) {
+                setSelectedChatId(mainThread.id);
+                setSelectedView('chat');
+              }
+            }}
+            className="w-full justify-start border-2"
+            size="sm"
+          >
+            <Home className="mr-2 h-4 w-4" />
+            <div className="flex-1 min-w-0">
+              <span className="font-medium">Main Thread</span>
+            </div>
+          </Button>
+        </div>
+
+        {/* Inbox/Dashboard quick access */}
+        <div className="flex gap-2 mb-3">
+          <Button
+            variant={selectedView === 'inbox' ? 'default' : 'outline'}
+            onClick={() => setSelectedView('inbox')}
+            className="flex-1 justify-start"
+            size="sm"
+          >
+            <Inbox className="mr-2 h-4 w-4" />
+            Inbox
+          </Button>
+          <Button
+            variant={selectedView === 'dashboard' ? 'default' : 'outline'}
+            onClick={() => setSelectedView('dashboard')}
+            className="flex-1 justify-start"
+            size="sm"
+          >
+            <LayoutDashboard className="mr-2 h-4 w-4" />
+            Dashboard
+          </Button>
+        </div>
+
         <div className="flex gap-2">
           <Button
             onClick={() => handleCreateChat()}
@@ -386,7 +334,7 @@ export function Sidebar() {
             {createChatMutation.isPending ? 'Creating...' : 'New Chat'}
           </Button>
           <Button
-            onClick={handleCreateFolder}
+            onClick={() => setIsCreateFolderOpen(true)}
             variant="outline"
             size="sm"
             className="border-slate-300"
@@ -445,7 +393,10 @@ export function Sidebar() {
                               ? "bg-slate-900 text-white hover:bg-slate-800 hover:text-white"
                               : "text-slate-600 hover:bg-slate-100"
                           )}
-                          onClick={() => setSelectedChatId(chat.id)}
+                          onClick={() => {
+                            setSelectedChatId(chat.id);
+                            setSelectedView('chat');
+                          }}
                         >
                           <MessageSquare className="mr-2 h-3.5 w-3.5" />
                           <span className="truncate text-sm flex-1 text-left">{chat.title}</span>
@@ -511,6 +462,12 @@ export function Sidebar() {
                       key={chat.id}
                       chat={chat}
                       isSelected={selectedChatId === chat.id}
+                      onSelect={(id) => {
+                        setSelectedChatId(id);
+                        setSelectedView('chat');
+                      }}
+                      onRename={handleRenameChat}
+                      onDelete={handleDeleteChat}
                     />
                   ))}
                 </div>
@@ -531,6 +488,10 @@ export function Sidebar() {
                       key={chat.id}
                       variant="ghost"
                       className="w-full justify-start font-normal h-10 rounded-xl px-3"
+                      onClick={() => {
+                        setSelectedChatId(chat.id);
+                        setSelectedView('chat');
+                      }}
                     >
                       <MessageSquare className="mr-2 h-4 w-4" />
                       <span className="truncate">{chat.title}</span>
@@ -549,119 +510,72 @@ export function Sidebar() {
         </div>
       </ScrollArea>
 
-      <div className="p-4 border-t border-slate-200/80 mt-auto bg-white/70">
-        <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Use account menu for settings</p>
+      <div className="p-3 border-t border-slate-200/80 mt-auto bg-white/70">
+        <AccountMenu />
       </div>
 
-      {/* Create Folder Dialog */}
-      <Dialog open={isCreateFolderOpen} onOpenChange={setIsCreateFolderOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Create Folder</DialogTitle>
-          </DialogHeader>
-          <Input
-            value={newFolderName}
-            onChange={(e) => setNewFolderName(e.target.value)}
-            placeholder="Folder name"
-            onKeyDown={(e) => e.key === 'Enter' && confirmCreateFolder()}
-          />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsCreateFolderOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={confirmCreateFolder}
-              disabled={!newFolderName.trim() || createFolderMutation.isPending}
-            >
-              {createFolderMutation.isPending ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : null}
-              Create
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Dialogs */}
+      <CreateFolderDialog
+        open={isCreateFolderOpen}
+        onOpenChange={setIsCreateFolderOpen}
+        folderName={newFolderName}
+        onFolderNameChange={setNewFolderName}
+        onConfirm={() => {
+          if (newFolderName.trim()) {
+            createFolderMutation.mutate(newFolderName.trim(), {
+              onSuccess: () => {
+                setNewFolderName('');
+                setIsCreateFolderOpen(false);
+              },
+            });
+          }
+        }}
+        isPending={createFolderMutation.isPending}
+      />
 
-      {/* Delete Folder Confirmation Dialog */}
-      <Dialog open={!!folderToDelete} onOpenChange={() => setFolderToDelete(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete Folder?</DialogTitle>
-          </DialogHeader>
-          <p className="text-muted-foreground">Chats will be moved to root.</p>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setFolderToDelete(null)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={confirmDeleteFolder}
-              disabled={deleteFolderMutation.isPending}
-            >
-              {deleteFolderMutation.isPending ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : null}
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <DeleteFolderDialog
+        folderId={folderToDelete}
+        onOpenChange={() => setFolderToDelete(null)}
+        onConfirm={() => {
+          if (folderToDelete) {
+            deleteFolderMutation.mutate(folderToDelete, {
+              onSuccess: () => setFolderToDelete(null),
+            });
+          }
+        }}
+        isPending={deleteFolderMutation.isPending}
+      />
 
-      {/* Delete Chat Confirmation Dialog */}
-      <Dialog open={!!chatToDelete} onOpenChange={() => setChatToDelete(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete Chat?</DialogTitle>
-          </DialogHeader>
-          <p className="text-muted-foreground">
-            Are you sure you want to delete "{chatToDelete?.title}"?
-          </p>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setChatToDelete(null)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={confirmDeleteChat}
-              disabled={deleteChatMutation.isPending}
-            >
-              {deleteChatMutation.isPending ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : null}
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <DeleteChatDialog
+        chat={chatToDelete}
+        onOpenChange={() => setChatToDelete(null)}
+        onConfirm={() => {
+          if (chatToDelete) {
+            deleteChatMutation.mutate(chatToDelete.id, {
+              onSuccess: () => setChatToDelete(null),
+            });
+          }
+        }}
+        isPending={deleteChatMutation.isPending}
+      />
 
-      {/* Rename Chat Dialog */}
-      <Dialog open={!!chatToRename} onOpenChange={() => setChatToRename(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Rename Chat</DialogTitle>
-          </DialogHeader>
-          <Input
-            value={newChatTitle}
-            onChange={(e) => setNewChatTitle(e.target.value)}
-            placeholder="Chat title"
-            onKeyDown={(e) => e.key === 'Enter' && confirmRenameChat()}
-          />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setChatToRename(null)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={confirmRenameChat}
-              disabled={!newChatTitle.trim() || renameChatMutation.isPending}
-            >
-              {renameChatMutation.isPending ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : null}
-              Rename
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <RenameChatDialog
+        chat={chatToRename}
+        newTitle={newChatTitle}
+        onNewTitleChange={setNewChatTitle}
+        onOpenChange={() => setChatToRename(null)}
+        onConfirm={() => {
+          if (chatToRename && newChatTitle.trim() && newChatTitle !== chatToRename.currentTitle) {
+            renameChatMutation.mutate({ id: chatToRename.id, title: newChatTitle.trim() }, {
+              onSuccess: () => {
+                setChatToRename(null);
+                setNewChatTitle('');
+              },
+            });
+          }
+        }}
+        isPending={renameChatMutation.isPending}
+      />
     </aside>
   );
 }

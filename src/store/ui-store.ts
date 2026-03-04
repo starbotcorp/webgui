@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { Settings } from '@/lib/types';
 
+export type ViewMode = 'chat' | 'inbox' | 'dashboard' | 'main';
+
 interface UIState {
   selectedChatId: string | null;
   setSelectedChatId: (id: string | null) => void;
@@ -16,9 +18,15 @@ interface UIState {
   openLogs: () => void;
   closeLogs: () => void;
   toggleLogs: () => void;
-  
+
   isSidebarOpen: boolean;
   toggleSidebar: () => void;
+
+  selectedView: ViewMode;
+  setSelectedView: (view: ViewMode) => void;
+
+  showWelcomeBanner: boolean;
+  dismissWelcomeBanner: () => void;
 
   settings: Settings;
   updateSettings: (settings: Partial<Settings>) => void;
@@ -46,12 +54,18 @@ export const useUIStore = create<UIState>((set) => ({
   isSidebarOpen: true,
   toggleSidebar: () => set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),
 
+  selectedView: 'chat',
+  setSelectedView: (view) => set({ selectedView: view }),
+
+  showWelcomeBanner: false,
+  dismissWelcomeBanner: () => set({ showWelcomeBanner: false }),
+
   settings: {
     mode: 'standard',
     auto: true,
-    speed: false, // false = quality mode, true = fast mode
+    thinking: false, // false = DeepSeek Chat (V3), true = DeepSeek Reasoner (R1)
   },
-  updateSettings: (newSettings) => 
+  updateSettings: (newSettings) =>
     set((state) => ({ settings: { ...state.settings, ...newSettings } })),
 
   draftInput: '',

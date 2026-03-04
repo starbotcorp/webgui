@@ -1,36 +1,22 @@
 import { api } from '../api';
-import { Folder, FolderSchema } from '../types';
 import { z } from 'zod';
 
-// API response wrapper schemas
-const FoldersResponseSchema = z.object({
-  folders: z.array(FolderSchema),
-});
+// Re-export from types.ts to keep consistency
+import { Folder } from '../types';
 
-const FolderResponseSchema = z.object({
-  folder: FolderSchema,
-});
-
+// API functions - unwrap wrapped responses
 export const foldersApi = {
-  list: async (projectId: string) => {
-    const response = await api.get(`/projects/${projectId}/folders`, FoldersResponseSchema);
-    return response.folders;
+  list: (projectId: string) => {
+    const response = api.get<{ folders: Folder[] }>(`/projects/${projectId}/folders`, z.object({
+      folders: z.array(z.any()), // Use any to avoid circular type issues
+    }));
+    return response.then(r => r.folders);
   },
-
-  get: async (id: string) => {
-    const response = await api.get(`/folders/${id}`, FolderResponseSchema);
-    return response.folder;
+  create: (projectId: string, data: { name: string }) => {
+    const response = api.post<{ folder: Folder }>(`/projects/${projectId}/folders`, data, z.object({
+      folder: z.any(), // Use any to avoid circular type issues
+    }));
+    return response.then(r => r.folder);
   },
-
-  create: async (projectId: string, data: { name: string }) => {
-    const response = await api.post(`/projects/${projectId}/folders`, data, FolderResponseSchema);
-    return response.folder;
-  },
-
-  update: async (id: string, data: Partial<Folder>) => {
-    const response = await api.put(`/folders/${id}`, data, FolderResponseSchema);
-    return response.folder;
-  },
-
-  delete: (id: string) => api.delete<void>(`/folders/${id}`),
+  delete: (folderId: string) => api.delete(`/folders/${folderId}`),
 };

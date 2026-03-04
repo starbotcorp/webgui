@@ -30,11 +30,8 @@ export function useChatStream(chatId: string | null) {
   const startStream = async (settings?: Partial<Settings>) => {
     if (!chatId) return;
 
-    console.log('[startStream] Starting stream for chat:', chatId);
-
     // Abort any existing stream for this chat
     if (abortControllerRef.current) {
-      console.log('[startStream] Aborting previous stream');
       abortControllerRef.current.abort();
     }
 
@@ -44,9 +41,6 @@ export function useChatStream(chatId: string | null) {
 
     // Define event handler inside startStream to have access to streamChatId
     const handleSSEEvent = (eventType: string, data: any) => {
-      // Debug: log all SSE events
-      console.log('[SSE Event]', eventType, JSON.stringify(data).slice(0, 200));
-
       switch (eventType) {
         case 'status':
           setStatus(data.message || '');
@@ -123,18 +117,21 @@ export function useChatStream(chatId: string | null) {
     };
 
     try {
+      // Get user's timezone for temporal context
+      const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
       const response = await fetch(`${API_BASE_URL}/chats/${chatId}/run`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'text/event-stream',
+          'X-Client-Timezone': userTimezone,
         },
         credentials: 'include',
         body: JSON.stringify({
           mode: settings?.mode || 'standard',
           auto: settings?.auto ?? true,
-          speed: settings?.speed ?? false,
-          model_prefs: settings?.model_prefs,
+          thinking: settings?.thinking ?? false,
         }),
         signal: controller.signal,
       });
@@ -163,8 +160,8 @@ export function useChatStream(chatId: string | null) {
         try {
           const parsedData = JSON.parse(rawData);
           handleSSEEvent(currentEvent, parsedData);
-        } catch (parseError) {
-          console.error('Failed to parse SSE event payload:', parseError, rawData);
+        } catch {
+          // Ignore parse errors for malformed SSE data
         }
 
         currentEvent = 'message';
@@ -172,8 +169,6 @@ export function useChatStream(chatId: string | null) {
 
       const processLine = (rawLine: string) => {
         const line = rawLine.replace(/\r$/, '');
-
-        console.log('[SSE Line]', line.slice(0, 100));
 
         if (!line) {
           flushCurrentEvent();
@@ -187,7 +182,6 @@ export function useChatStream(chatId: string | null) {
 
         if (line.startsWith('event:')) {
           currentEvent = line.slice(6).trim() || 'message';
-          console.log('[SSE] Event type set to:', currentEvent);
           return;
         }
 
@@ -231,7 +225,6 @@ export function useChatStream(chatId: string | null) {
         return;
       }
       if (err instanceof Error) {
-        console.error('Stream error:', err);
         const errorMessage = err.message.includes('Failed to fetch')
           ? 'Network error. Please check your connection.'
           : err.message;

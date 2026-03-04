@@ -1,14 +1,20 @@
 import { z } from 'zod';
 
+// These schemas should match what the API actually returns
+// Project API returns: id, name, userId?, email?, createdAt, updatedAt, _count?
 export const ProjectSchema = z.object({
   id: z.string(),
   name: z.string(),
-  email: z.string().optional(),
-  description: z.string().optional(),
-  createdAt: z.string(),
-  updatedAt: z.string().optional(),
+  userId: z.string().nullable().optional(),
+  email: z.string().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  _count: z.object({
+    chats: z.number(),
+  }).optional(),
 });
 
+// Folder API returns: id, projectId?, name, createdAt?, chats?
 export const FolderSchema = z.object({
   id: z.string(),
   projectId: z.string().optional(),
@@ -20,15 +26,23 @@ export const FolderSchema = z.object({
   })).optional(),
 });
 
+// Chat API returns: id, projectId?, workspaceId?, folderId?, title, clientSource?, createdAt, updatedAt, folder?, isFavorite?, isMain?
+// Note: _count is only returned when listing chats, not individual chat
 export const ChatSchema = z.object({
   id: z.string(),
-  projectId: z.string().optional(),
-  folderId: z.string().optional().nullable(),
-  folder: FolderSchema.omit({ chats: true }).optional().nullable(),
+  projectId: z.string().nullable(),
+  workspaceId: z.string().nullable(),
+  folderId: z.string().nullable(),
   title: z.string(),
-  clientSource: z.string().optional(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
+  clientSource: z.string().nullable(),
+  isFavorite: z.boolean().default(false),
+  isMain: z.boolean().default(false),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  folder: z.object({
+    id: z.string(),
+    name: z.string(),
+  }).nullable().optional(),
 });
 
 export const MessageSchema = z.object({
@@ -43,8 +57,7 @@ export const MessageSchema = z.object({
 export const SettingsSchema = z.object({
   mode: z.enum(['quick', 'standard', 'deep']).default('standard'),
   auto: z.boolean().default(true),
-  speed: z.boolean().default(false), // true = fast mode, false = quality mode
-  model_prefs: z.string().optional(),
+  thinking: z.boolean().default(false), // true = use DeepSeek Reasoner (R1), false = use DeepSeek Chat (V3)
 });
 
 export type Project = z.infer<typeof ProjectSchema>;

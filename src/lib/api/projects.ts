@@ -1,36 +1,45 @@
 import { api } from '../api';
-import { Project, ProjectSchema } from '../types';
 import { z } from 'zod';
 
-// API response wrapper schemas
-const ProjectsResponseSchema = z.object({
-  projects: z.array(ProjectSchema),
+// API returns different data for list vs create
+// List: has _count, individual: { project: {...} }
+// Create: { project: {...} } without _count
+
+// Individual project schema - what API returns for single project
+const ProjectSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  userId: z.string().nullable(), // API returns null, not undefined
+  email: z.string().nullable(),
+  createdAt: z.string().datetime(),
 });
 
-const ProjectResponseSchema = z.object({
-  project: ProjectSchema,
-});
+export type Project = z.infer<typeof ProjectSchema>;
 
+// API functions - unwrap wrapped responses
 export const projectsApi = {
-  list: async (email: string) => {
-    const response = await api.get(`/projects?email=${encodeURIComponent(email)}`, ProjectsResponseSchema);
-    return response.projects;
-  },
+  list: (email: string) => {
+    // Use looser schema for list that allows null userId and includes _count
+    const ListProjectSchema = z.object({
+      id: z.string(),
+      name: z.string(),
+      userId: z.string().nullable(),
+      email: z.string().nullable(),
+      createdAt: z.string().datetime(),
+      _count: z.object({
+        chats: z.number(),
+      }).optional(),
+    });
 
-  get: async (id: string) => {
-    const response = await api.get(`/projects/${id}`, ProjectResponseSchema);
-    return response.project;
+    const response = api.get<{ projects: Project[] }>(`/projects?email=${encodeURIComponent(email)}`, z.object({
+      projects: z.array(ListProjectSchema),
+    }));
+    return response.then(r => r.projects);
   },
-
-  create: async (data: Partial<Project> & { email?: string }) => {
-    const response = await api.post('/projects', data, ProjectResponseSchema);
-    return response.project;
+  create: (data: { name: string; email: string }) => {
+    const response = api.post<{ project: Project }>('/projects', data, z.object({
+      project: ProjectSchema,
+    }));
+    return response.then(r => r.project);
   },
-
-  update: async (id: string, data: Partial<Project>) => {
-    const response = await api.put(`/projects/${id}`, data, ProjectResponseSchema);
-    return response.project;
-  },
-
-  delete: (id: string) => api.delete<void>(`/projects/${id}`),
 };

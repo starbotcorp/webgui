@@ -1,44 +1,31 @@
-import { z } from 'zod';
 import { api } from '../api';
+import { z } from 'zod';
 
-const MemorySchema = z.object({
-  id: z.string(),
-  content: z.string(),
-  updatedAt: z.string(),
+// Schemas - Match what API actually returns
+const MemoryResponseSchema = z.object({
+  memory: z.object({
+    id: z.string(),
+    content: z.string(),
+    updatedAt: z.string().datetime().optional(),
+  }),
 });
 
-const MemoryEnvelopeSchema = z.object({
-  memory: MemorySchema,
-});
+export type MemoryResponse = z.infer<typeof MemoryResponseSchema>;
 
-export type MemoryDocument = z.infer<typeof MemorySchema>;
-
+// API functions - unwrap wrapped responses
 export const memoryApi = {
-  getIdentity: async () => {
-    const response = await api.get('/identity', MemoryEnvelopeSchema);
-    return response.memory;
-  },
+  // Project memory (identity)
+  getIdentity: () => api.get<MemoryResponse>('/identity', MemoryResponseSchema).then(r => r.memory),
+  updateIdentity: (content: string) => api.put<MemoryResponse>('/identity', { content }, MemoryResponseSchema).then(r => r.memory),
+  processIdentity: () => api.post('/identity/process', {}),
 
-  updateIdentity: async (content: string) => {
-    const response = await api.put('/identity', { content }, MemoryEnvelopeSchema);
-    return response.memory;
-  },
+  // Chat memory
+  getChatMemory: (chatId: string) => api.get<MemoryResponse>(`/chats/${chatId}/memory`, MemoryResponseSchema).then(r => r.memory),
+  updateChatMemory: (chatId: string, content: string) => api.put<MemoryResponse>(`/chats/${chatId}/memory`, { content }, MemoryResponseSchema).then(r => r.memory),
+  processChatMemory: (chatId: string) => api.post(`/chats/${chatId}/memory/process`, {}),
 
-  processIdentity: async () => {
-    return api.post('/identity/process', {});
-  },
-
-  getChatMemory: async (chatId: string) => {
-    const response = await api.get(`/chats/${chatId}/memory`, MemoryEnvelopeSchema);
-    return response.memory;
-  },
-
-  updateChatMemory: async (chatId: string, content: string) => {
-    const response = await api.put(`/chats/${chatId}/memory`, { content }, MemoryEnvelopeSchema);
-    return response.memory;
-  },
-
-  processChatMemory: async (chatId: string) => {
-    return api.post(`/chats/${chatId}/memory/process`, {});
-  },
+  // Workspace memory
+  getWorkspaceMemory: (workspaceId: string) => api.get<MemoryResponse>(`/workspaces/${workspaceId}/memory`, MemoryResponseSchema).then(r => r.memory),
+  updateWorkspaceMemory: (workspaceId: string, content: string) => api.put<MemoryResponse>(`/workspaces/${workspaceId}/memory`, { content }, MemoryResponseSchema).then(r => r.memory),
+  processWorkspaceMemory: (workspaceId: string) => api.post(`/workspaces/${workspaceId}/memory/process`, {}),
 };

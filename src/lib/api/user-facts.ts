@@ -26,13 +26,21 @@ const OnboardingStatusSchema = z.object({
 
 export type OnboardingStatus = z.infer<typeof OnboardingStatusSchema>;
 
+// New onboarding status schema from /v1/onboarding/status
+const NewOnboardingStatusSchema = z.object({
+  status: z.enum(['NOT_STARTED', 'IN_PROGRESS', 'COMPLETED']),
+  lastCompletedAt: z.string().datetime().nullable(),
+});
+
+export type NewOnboardingStatus = z.infer<typeof NewOnboardingStatusSchema>;
+
 const SetFactResponseSchema = z.object({
   fact: UserFactSchema,
 });
 
 const SuccessResponseSchema = z.object({
   success: z.boolean(),
-  message: z.string(),
+  message: z.string().optional(),
 });
 
 export const userFactsApi = {
@@ -50,15 +58,34 @@ export const userFactsApi = {
     return api.delete<{ success: boolean }>(`/user/facts/${encodeURIComponent(factKey)}`);
   },
 
+  // Legacy endpoint - uses fact-based check
   getOnboardingStatus: () => {
     const response = api.get<OnboardingStatus>('/user/facts/onboarding-status', OnboardingStatusSchema);
     return response;
   },
 
-  resetOnboarding: () => {
-    return api.post<{ success: boolean; message: string }>('/user/facts/reset-onboarding', {}, SuccessResponseSchema);
+  // New endpoint - uses status field
+  getOnboardingStatusV2: () => {
+    const response = api.get<NewOnboardingStatus>('/onboarding/status', NewOnboardingStatusSchema);
+    return response;
   },
 
+  // New endpoint - set status to IN_PROGRESS (hides facts from prompts)
+  resetOnboardingV2: () => {
+    return api.post<{ success: boolean }>('/onboarding/reset', {}, SuccessResponseSchema);
+  },
+
+  // New endpoint - complete onboarding with facts
+  completeOnboarding: (facts: Record<string, string>) => {
+    return api.post<{ success: boolean }>('/onboarding/complete', { facts }, SuccessResponseSchema);
+  },
+
+  // Legacy endpoint - deletes onboarding facts
+  resetOnboarding: () => {
+    return api.post<{ success: boolean; message?: string }>('/user/facts/reset-onboarding', {}, SuccessResponseSchema);
+  },
+
+  // Legacy endpoint - clears main chat and sets up for onboarding
   restartMainOnboarding: () => {
     const RestartResponseSchema = z.object({
       success: z.boolean(),

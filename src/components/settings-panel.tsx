@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useUIStore } from '@/store/ui-store';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import {
   Dialog,
@@ -13,7 +12,7 @@ import {
 } from '@/components/ui/dialog';
 import { memoryApi } from '@/lib/api/memory';
 import { toast } from 'sonner';
-import { Bot, Brain, Gauge, IdCard, MessageSquareText, Sparkles, X } from 'lucide-react';
+import { Brain, IdCard, MessageSquareText, Sparkles, X, Lightbulb } from 'lucide-react';
 
 type SettingsTab = 'routing' | 'identity' | 'chat';
 
@@ -34,13 +33,8 @@ export function SettingsPanel() {
   } = useUIStore();
 
   const [activeTab, setActiveTab] = useState<SettingsTab>('routing');
-  const [modelPrefs, setModelPrefs] = useState(settings.model_prefs || '');
   const [identityDraft, setIdentityDraft] = useState('');
   const [chatMemoryDraft, setChatMemoryDraft] = useState('');
-
-  useEffect(() => {
-    setModelPrefs(settings.model_prefs || '');
-  }, [settings.model_prefs]);
 
   const identityQuery = useQuery({
     queryKey: ['identity-memory'],
@@ -96,11 +90,6 @@ export function SettingsPanel() {
       toast.error(error instanceof Error ? error.message : 'Failed to save chat memory');
     },
   });
-
-  const saveModelPrefs = () => {
-    updateSettings({ model_prefs: modelPrefs.trim() || undefined });
-    toast.success('Model preference saved');
-  };
 
   return (
     <Dialog open={isSettingsOpen} onOpenChange={setSettingsOpen}>
@@ -205,38 +194,6 @@ export function SettingsPanel() {
               <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                 <div className="mb-3">
                   <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
-                    <Gauge className="h-4 w-4 text-slate-600" />
-                    Execution Speed
-                  </h3>
-                  <p className="text-xs text-slate-500">Trade output length for faster turnaround.</p>
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => updateSettings({ speed: true })}
-                    className={`flex-1 rounded-xl ${settings.speed
-                      ? 'bg-slate-900 text-white border-slate-900 hover:bg-slate-800 hover:text-white'
-                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}
-                  >
-                    Fast
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => updateSettings({ speed: false })}
-                    className={`flex-1 rounded-xl ${!settings.speed
-                      ? 'bg-slate-900 text-white border-slate-900 hover:bg-slate-800 hover:text-white'
-                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}
-                  >
-                    Quality
-                  </Button>
-                </div>
-              </section>
-
-              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="mb-3">
-                  <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
                     <Sparkles className="h-4 w-4 text-slate-600" />
                     Automation
                   </h3>
@@ -257,27 +214,31 @@ export function SettingsPanel() {
               <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                 <div className="mb-3">
                   <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
-                    <Bot className="h-4 w-4 text-slate-600" />
-                    Model Preference
+                    <Lightbulb className="h-4 w-4 text-slate-600" />
+                    Thinking Mode
                   </h3>
-                  <p className="text-xs text-slate-500">
-                    Optional: provider or provider:model (example: `azure` or `azure:gpt-5.2-chat`).
-                  </p>
+                  <p className="text-xs text-slate-500">Show reasoning process with DeepSeek R1.</p>
                 </div>
                 <div className="flex gap-2">
-                  <Input
-                    value={modelPrefs}
-                    onChange={(e) => setModelPrefs(e.target.value)}
-                    placeholder="auto"
-                    className="rounded-xl border-slate-300 focus-visible:ring-slate-400"
-                  />
                   <Button
                     type="button"
-                    onClick={saveModelPrefs}
-                    size="sm"
-                    className="rounded-xl bg-slate-900 text-white hover:bg-slate-800"
+                    variant="outline"
+                    onClick={() => updateSettings({ thinking: true })}
+                    className={`flex-1 rounded-xl ${settings.thinking
+                      ? 'bg-slate-900 text-white border-slate-900 hover:bg-slate-800 hover:text-white'
+                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}
                   >
-                    Apply
+                    On (R1)
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => updateSettings({ thinking: false })}
+                    className={`flex-1 rounded-xl ${!settings.thinking
+                      ? 'bg-slate-900 text-white border-slate-900 hover:bg-slate-800 hover:text-white'
+                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}
+                  >
+                    Off (V3)
                   </Button>
                 </div>
               </section>

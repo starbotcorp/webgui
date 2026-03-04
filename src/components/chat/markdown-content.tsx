@@ -36,14 +36,17 @@ export function MarkdownContent({ content, className }: MarkdownContentProps) {
     <div
       className={cn(
         "prose prose-sm dark:prose-invert max-w-none",
-        "prose-p:leading-relaxed prose-pre:p-0 prose-pre:bg-transparent",
-        "prose-headings:font-semibold prose-headings:tracking-tight",
-        "prose-a:text-primary prose-a:no-underline hover:prose-a:underline",
-        "prose-code:rounded prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:font-mono prose-code:text-sm prose-code:before:content-[''] prose-code:after:content-['']",
+        "prose-p:leading-relaxed prose-p:text-slate-800",
+        "prose-pre:p-0 prose-pre:bg-transparent",
+        "prose-headings:font-semibold prose-headings:tracking-tight prose-headings:text-slate-900",
+        "prose-a:text-blue-600 prose-a:no-underline hover:prose-a:underline",
+        "prose-code:rounded prose-code:bg-slate-100 prose-code:px-1.5 prose-code:py-0.5 prose-code:font-mono prose-code:text-sm prose-code:text-slate-700 prose-code:before:content-[''] prose-code:after:content-['']",
         "prose-img:rounded-lg prose-img:shadow-md",
-        "prose-hr:border-border",
-        "prose-blockquote:border-l-primary prose-blockquote:font-normal prose-blockquote:not-italic",
-        "prose-table:border-border prose-th:border-border prose-td:border-border",
+        "prose-hr:border-slate-200",
+        "prose-blockquote:border-l-slate-400 prose-blockquote:bg-slate-50 prose-blockquote:font-normal prose-blockquote:not-italic prose-blockquote:text-slate-700",
+        "prose-table:border-slate-200 prose-th:border-slate-200 prose-td:border-slate-200",
+        "prose-strong:text-slate-900",
+        "prose-ul:text-slate-800 prose-ol:text-slate-800",
         className
       )}
     >

@@ -59,6 +59,7 @@ export function Sidebar() {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [localChats, setLocalChats] = useState<Chat[]>([]);
   const [isMounted, setIsMounted] = useState(false);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
 
   // Dialog states
   const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false);
@@ -70,6 +71,8 @@ export function Sidebar() {
 
   useEffect(() => {
     setIsMounted(true);
+    const session = readAuthSession();
+    setUserEmail(session?.email || null);
   }, []);
 
   const sensors = useSensors(
@@ -82,9 +85,6 @@ export function Sidebar() {
       coordinateGetter: sortableKeyboardCoordinates,
     })
   );
-
-  const session = readAuthSession();
-  const userEmail = session?.email;
 
   const { data: projects } = useQuery({
     queryKey: ['projects', userEmail],
@@ -107,10 +107,11 @@ export function Sidebar() {
   });
 
   // Get main thread (isMain thread) - create if doesn't exist
-  const { data: mainThread, isLoading: mainThreadLoading } = useQuery({
-    queryKey: ['main-thread', currentProjectId],
-    queryFn: () => currentProjectId ? chatsApi.getMainOrCreate() : Promise.resolve(null),
-    enabled: !!currentProjectId,
+  // Note: This endpoint finds/creates the project automatically, so we don't need currentProjectId
+  const { data: mainThread, isLoading: mainThreadLoading, refetch: refetchMainThread } = useQuery({
+    queryKey: ['main-thread'],
+    queryFn: () => chatsApi.getMainOrCreate(),
+    enabled: !!userEmail,
   });
 
   // Auto-open main thread when first created (onboarding)
@@ -132,7 +133,7 @@ export function Sidebar() {
     renameChatMutation,
   } = useSidebarMutations({
     currentProjectId,
-    userEmail,
+    userEmail: userEmail || undefined,
     onChatCreated: setSelectedChatId,
   });
 
@@ -219,18 +220,30 @@ export function Sidebar() {
         <div className="flex-1 flex flex-col items-center gap-2 py-3">
           {/* Main thread button */}
           <Button
-            variant={selectedView === 'main' ? 'default' : 'ghost'}
-            onClick={() => {
+            variant={selectedChatId === mainThread?.id ? 'default' : 'ghost'}
+            onClick={async () => {
               if (mainThread) {
                 setSelectedChatId(mainThread.id);
                 setSelectedView('chat');
+              } else {
+                // Refetch to get/create the main thread
+                const result = await refetchMainThread();
+                if (result.data) {
+                  setSelectedChatId(result.data.id);
+                  setSelectedView('chat');
+                }
               }
             }}
             size="icon"
             aria-label="Main thread"
             className="rounded-xl"
+            disabled={mainThreadLoading}
           >
-            <Home className="h-5 w-5" />
+            {mainThreadLoading ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : (
+              <Home className="h-5 w-5" />
+            )}
           </Button>
           <Button
             variant={selectedView === 'inbox' ? 'default' : 'ghost'}
@@ -280,17 +293,29 @@ export function Sidebar() {
         {/* Main Thread - Special thread at top */}
         <div className="mb-3">
           <Button
-            variant={selectedView === 'main' ? 'default' : 'outline'}
-            onClick={() => {
+            variant={selectedChatId === mainThread?.id ? 'default' : 'outline'}
+            onClick={async () => {
               if (mainThread) {
                 setSelectedChatId(mainThread.id);
                 setSelectedView('chat');
+              } else {
+                // Refetch to get/create the main thread
+                const result = await refetchMainThread();
+                if (result.data) {
+                  setSelectedChatId(result.data.id);
+                  setSelectedView('chat');
+                }
               }
             }}
             className="w-full justify-start border-2"
             size="sm"
+            disabled={mainThreadLoading}
           >
-            <Home className="mr-2 h-4 w-4" />
+            {mainThreadLoading ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Home className="mr-2 h-4 w-4" />
+            )}
             <div className="flex-1 min-w-0">
               <span className="font-medium">Main Thread</span>
             </div>

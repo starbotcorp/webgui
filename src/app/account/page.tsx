@@ -12,13 +12,14 @@ import {
   readAuthSession,
   type AuthSession,
 } from '@/lib/auth-session';
-import { userFactsApi, type UserFact, type OnboardingStatus } from '@/lib/api/user-facts';
+import { userFactsApi, type UserFact, type OnboardingStatus, type NewOnboardingStatus } from '@/lib/api/user-facts';
 
 export default function AccountPage() {
   const router = useRouter();
   const [session, setSession] = useState<AuthSession | null>(null);
   const [facts, setFacts] = useState<UserFact[]>([]);
   const [onboardingStatus, setOnboardingStatus] = useState<OnboardingStatus | null>(null);
+  const [newOnboardingStatus, setNewOnboardingStatus] = useState<NewOnboardingStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [newFactKey, setNewFactKey] = useState('');
@@ -26,12 +27,14 @@ export default function AccountPage() {
 
   const fetchData = async () => {
     try {
-      const [fetchedFacts, fetchedStatus] = await Promise.all([
+      const [fetchedFacts, fetchedStatus, fetchedNewStatus] = await Promise.all([
         userFactsApi.list(),
         userFactsApi.getOnboardingStatus(),
+        userFactsApi.getOnboardingStatusV2(),
       ]);
       setFacts(fetchedFacts);
       setOnboardingStatus(fetchedStatus);
+      setNewOnboardingStatus(fetchedNewStatus);
     } catch (error) {
       console.error('Failed to fetch user facts:', error);
     } finally {
@@ -81,8 +84,29 @@ export default function AccountPage() {
     }
   };
 
+  // New restart onboarding flow - sets status to IN_PROGRESS, clears chat, preserves facts
+  const handleRestartOnboarding = async () => {
+    if (!confirm('This will clear the current chat and let you re-enter your personal info. Your existing facts will be temporarily hidden until you finish. Continue?')) {
+      return;
+    }
+    try {
+      // 1. Set status to IN_PROGRESS (hides facts from AI)
+      await userFactsApi.resetOnboardingV2();
+
+      // 2. Clear main chat messages
+      const result = await userFactsApi.restartMainOnboarding();
+
+      // 3. Navigate to the main chat
+      router.push(`/?chat=${result.chatId}`);
+    } catch (error) {
+      console.error('Failed to restart onboarding:', error);
+      alert('Failed to restart onboarding. Please try again.');
+    }
+  };
+
+  // Legacy reset - deletes facts
   const handleResetOnboarding = async () => {
-    if (!confirm('This will clear your onboarding information (name, timezone, role). Starbot will ask you for this information again in your next conversation. Continue?')) {
+    if (!confirm('This will permanently delete your onboarding information (name, timezone, role). Starbot will ask you for this information again. Continue?')) {
       return;
     }
     try {
@@ -104,6 +128,10 @@ export default function AccountPage() {
       alert('Failed to restart main onboarding. Please try again.');
     }
   };
+
+  // Determine effective status
+  const isComplete = newOnboardingStatus?.status === 'COMPLETED' || onboardingStatus?.isComplete;
+  const isInProgress = newOnboardingStatus?.status === 'IN_PROGRESS';
 
   if (!session) {
     return (
@@ -183,41 +211,56 @@ export default function AccountPage() {
           </div>
 
           {/* Onboarding Status */}
-          {!isLoading && onboardingStatus && (
+          {!isLoading && (
             <div className={`mb-4 rounded-2xl border p-4 ${
-              onboardingStatus.isComplete
-                ? 'border-emerald-200 bg-emerald-50'
-                : 'border-amber-200 bg-amber-50'
+              isInProgress
+                ? 'border-blue-200 bg-blue-50'
+                : isComplete
+                  ? 'border-emerald-200 bg-emerald-50'
+                  : 'border-amber-200 bg-amber-50'
             }`}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  {onboardingStatus.isComplete ? (
+                  {isInProgress ? (
+                    <AlertCircle className="h-5 w-5 text-blue-600" />
+                  ) : isComplete ? (
                     <CheckCircle className="h-5 w-5 text-emerald-600" />
                   ) : (
                     <AlertCircle className="h-5 w-5 text-amber-600" />
                   )}
                   <p className="text-sm font-medium text-slate-900">
-                    {onboardingStatus.isComplete ? 'Onboarding Complete' : 'Onboarding In Progress'}
+                    {isInProgress
+                      ? 'Onboarding In Progress'
+                      : isComplete
+                        ? 'Onboarding Complete'
+                        : 'Onboarding Required'}
                   </p>
                 </div>
-                {onboardingStatus.isComplete && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={handleResetOnboarding}
-                    className="text-slate-500 hover:text-amber-600"
-                    title="Restart onboarding"
-                  >
-                    <RotateCcw className="h-4 w-4" />
-                  </Button>
-                )}
+                <div className="flex gap-2">
+                  {isComplete && !isInProgress && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={handleRestartOnboarding}
+                      className="text-slate-500 hover:text-blue-600"
+                      title="Restart onboarding (preserves facts)"
+                    >
+                      <RotateCcw className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
               </div>
-              {!onboardingStatus.isComplete && (
+              {isInProgress && (
+                <p className="mt-1 text-sm text-slate-600">
+                  Your facts are temporarily hidden. Complete the onboarding conversation to update them.
+                </p>
+              )}
+              {!isComplete && !isInProgress && onboardingStatus && (
                 <p className="mt-1 text-sm text-slate-600">
                   Missing: {onboardingStatus.requiredKeys.filter(k => !onboardingStatus.collectedFacts.includes(k)).join(', ')}
                 </p>
               )}
-              {!onboardingStatus.isComplete && (
+              {!isComplete && !isInProgress && (
                 <div className="mt-3">
                   <Button
                     size="sm"
@@ -225,6 +268,17 @@ export default function AccountPage() {
                     className="bg-slate-900 text-white hover:bg-slate-800"
                   >
                     Start Onboarding Chat
+                  </Button>
+                </div>
+              )}
+              {isInProgress && (
+                <div className="mt-3">
+                  <Button
+                    size="sm"
+                    onClick={handleStartOnboarding}
+                    className="bg-slate-900 text-white hover:bg-slate-800"
+                  >
+                    Continue Onboarding
                   </Button>
                 </div>
               )}
@@ -277,7 +331,9 @@ export default function AccountPage() {
               {facts.map((fact) => (
                 <div
                   key={fact.id}
-                  className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                  className={`flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 p-4 ${
+                    isInProgress ? 'opacity-50' : ''
+                  }`}
                 >
                   <div className="flex-1">
                     <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{fact.factKey}</p>
@@ -291,6 +347,7 @@ export default function AccountPage() {
                     variant="ghost"
                     onClick={() => handleDeleteFact(fact.factKey)}
                     className="text-slate-500 hover:text-red-600"
+                    disabled={isInProgress}
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>

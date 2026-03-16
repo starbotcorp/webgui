@@ -106,6 +106,10 @@ export function useChatStream(chatId: string | null) {
 
         case 'chat.updated':
           queryClient.invalidateQueries({ queryKey: ['chat', streamChatId] });
+          // Also invalidate chats list to update sidebar titles
+          queryClient.invalidateQueries({ queryKey: ['chats'] });
+          // Invalidate main-thread to update sidebar if title changed
+          queryClient.invalidateQueries({ queryKey: ['main-thread'] });
           break;
 
         case 'error':

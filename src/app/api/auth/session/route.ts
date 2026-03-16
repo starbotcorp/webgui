@@ -109,7 +109,7 @@ export async function POST(request: Request) {
   }
 
   // Check admin allowlist (only after password validation passes)
-  const isAdmin = evaluateAdmin(body.email, body.adminCode);
+  const isAdmin = evaluateAdmin(body.email);
   const role = isAdmin ? 'admin' : 'user';
   const response = NextResponse.json({ role, token: backendToken });
 

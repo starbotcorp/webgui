@@ -14,16 +14,31 @@ function isBrowser() {
   return typeof window !== 'undefined';
 }
 
+// Cache for useSyncExternalStore: return the same reference when the raw string hasn't changed
+let _cachedRaw: string | null = null;
+let _cachedSession: AuthSession | null = null;
+
 export function readAuthSession(): AuthSession | null {
   if (!isBrowser()) return null;
   const raw = localStorage.getItem(AUTH_SESSION_KEY);
-  if (!raw) return null;
+  if (raw === _cachedRaw) return _cachedSession;
+
+  _cachedRaw = raw;
+  if (!raw) {
+    _cachedSession = null;
+    return null;
+  }
 
   try {
     const parsed = JSON.parse(raw) as AuthSession;
-    if (!parsed.email || !parsed.name) return null;
+    if (!parsed.email || !parsed.name) {
+      _cachedSession = null;
+      return null;
+    }
+    _cachedSession = parsed;
     return parsed;
   } catch {
+    _cachedSession = null;
     return null;
   }
 }

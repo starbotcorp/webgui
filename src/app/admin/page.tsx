@@ -5,8 +5,9 @@ import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { z } from 'zod';
 import { api } from '@/lib/api';
+import { adminApi } from '@/lib/api/admin';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { BadgeCheck, Boxes, Database, IdCard, Shield, Sparkles } from 'lucide-react';
+import { BadgeCheck, Boxes, Database, IdCard, Shield, Sparkles, Users } from 'lucide-react';
 
 const HealthSchema = z.object({
   status: z.string(),
@@ -46,6 +47,12 @@ export default function AdminPage() {
     refetchInterval: 60_000,
   });
 
+  const usersQuery = useQuery({
+    queryKey: ['admin-users-count'],
+    queryFn: () => adminApi.listUsers({ limit: 1 }),
+    refetchInterval: 60_000,
+  });
+
   const providerSummary = useMemo(() => {
     const providers = providersQuery.data?.providers || [];
     const concreteProviders = providers.filter((item) => item.provider);
@@ -73,7 +80,7 @@ export default function AdminPage() {
         </p>
       </header>
 
-      <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4">
         <Card className="rounded-2xl border-slate-200/90 bg-white/90">
           <CardHeader className="pb-2">
             <CardDescription className="text-slate-500">API Health</CardDescription>
@@ -85,6 +92,19 @@ export default function AdminPage() {
           <CardContent className="space-y-1 text-sm text-slate-600">
             <div>Version: {healthQuery.data?.version || 'n/a'}</div>
             <div>Updated: {formatTimestamp(healthQuery.data?.timestamp)}</div>
+          </CardContent>
+        </Card>
+
+        <Card className="rounded-2xl border-slate-200/90 bg-white/90">
+          <CardHeader className="pb-2">
+            <CardDescription className="text-slate-500">Registered Users</CardDescription>
+            <CardTitle className="flex items-center gap-2 text-xl text-slate-900">
+              <Users className="h-5 w-5 text-slate-600" />
+              {usersQuery.data?.pagination.total ?? '—'}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-slate-600">
+            <Link href="/admin/users" className="text-sky-600 hover:underline">View all users →</Link>
           </CardContent>
         </Card>
 
@@ -158,6 +178,13 @@ export default function AdminPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
+            <Link
+              href="/admin/users"
+              className="inline-flex h-10 w-full items-center justify-start rounded-xl border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              <Users className="mr-2 h-4 w-4" />
+              Manage Users
+            </Link>
             <Link
               href="/admin/providers"
               className="inline-flex h-10 w-full items-center justify-start rounded-xl border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"

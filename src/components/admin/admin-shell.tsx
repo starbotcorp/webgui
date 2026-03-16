@@ -2,8 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useSyncExternalStore } from 'react';
-import { Boxes, ExternalLink, IdCard, LayoutDashboard, LogOut, Shield } from 'lucide-react';
+import { useSyncExternalStore, useEffect, useState } from 'react';
+import { Boxes, ExternalLink, FileText, IdCard, LayoutDashboard, LogOut, Shield, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import {
@@ -12,26 +12,17 @@ import {
   clearAuthSession,
   clearServerSession,
   readAuthSession,
+  type AuthSession,
 } from '@/lib/auth-session';
 
 const CHAT_APP_URL = process.env.NEXT_PUBLIC_CHAT_APP_URL || 'https://starbot.cloud';
 
 const NAV_ITEMS = [
-  {
-    href: '/admin',
-    label: 'Overview',
-    icon: LayoutDashboard,
-  },
-  {
-    href: '/admin/providers',
-    label: 'Providers',
-    icon: Boxes,
-  },
-  {
-    href: '/admin/identity',
-    label: 'Identity',
-    icon: IdCard,
-  },
+  { href: '/admin', label: 'Overview', icon: LayoutDashboard, exact: true },
+  { href: '/admin/users', label: 'Users', icon: Users, exact: false },
+  { href: '/admin/providers', label: 'Providers', icon: Boxes, exact: false },
+  { href: '/admin/identity', label: 'Identity', icon: IdCard, exact: false },
+  { href: '/admin/docs', label: 'Docs', icon: FileText, exact: false },
 ];
 
 function subscribeAuthSession(onStoreChange: () => void) {
@@ -54,13 +45,25 @@ function subscribeAuthSession(onStoreChange: () => void) {
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+
+  // Use state to avoid hydration mismatch - start with null, update after mount
+  const [mounted, setMounted] = useState(false);
   const session = useSyncExternalStore(subscribeAuthSession, readAuthSession, () => null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const handleSignOut = async () => {
     await clearServerSession();
     clearAuthSession();
     router.push('/login');
   };
+
+  // Use mounted state to determine what to show - prevents hydration mismatch
+  const displayName = mounted
+    ? (session?.name || session?.email || 'Admin')
+    : 'Admin';
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_right,rgba(14,165,233,0.14),transparent_45%),linear-gradient(180deg,#f8fafc_0%,#eef2ff_100%)]">
@@ -73,13 +76,13 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
               Admin
             </h1>
             <p className="mt-2 text-xs text-slate-600">
-              Signed in as {session?.name || session?.email || 'Admin'}
+              Signed in as {displayName}
             </p>
           </div>
 
           <nav className="space-y-1.5">
             {NAV_ITEMS.map((item) => {
-              const isActive = pathname === item.href;
+              const isActive = item.exact ? pathname === item.href : pathname === item.href || pathname.startsWith(item.href + '/');
               return (
                 <Link
                   key={item.href}

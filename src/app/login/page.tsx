@@ -2,7 +2,7 @@
 
 import { FormEvent, useMemo, useState, useSyncExternalStore } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, KeyRound, Lock, Mail } from 'lucide-react';
+import { ArrowLeft, Lock, Mail } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { syncServerSession, writeAuthSession } from '@/lib/auth-session';
@@ -44,7 +44,6 @@ export default function LoginPage() {
   const searchParams = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [adminCode, setAdminCode] = useState('');
   const isConsoleHost = useSyncExternalStore(subscribeLocation, readIsConsoleHost, () => false);
 
   const canSubmit = useMemo(() => {
@@ -56,10 +55,9 @@ export default function LoginPage() {
     if (!canSubmit) return;
 
     const displayName = email.split('@')[0] || 'User';
-    const { role, token } = await syncServerSession({
+    const { role } = await syncServerSession({
       name: displayName,
       email: email.trim(),
-      adminCode: adminCode.trim() || undefined,
       password: password,
     });
 
@@ -115,7 +113,7 @@ export default function LoginPage() {
             <h2 className="text-2xl font-semibold text-slate-900">Sign in</h2>
             <p className="mt-1 text-sm text-slate-600">
               {isConsoleHost
-                ? 'Admin access only. Sign in with your allowlisted email and admin code.'
+                ? 'Admin access only. Sign in with your allowlisted email.'
                 : 'Use your account credentials to continue.'}
             </p>
 
@@ -145,20 +143,6 @@ export default function LoginPage() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="h-11 rounded-xl border-slate-300 pl-9 focus-visible:ring-slate-400"
-                  />
-                </div>
-              </label>
-
-              <label className="block space-y-1">
-                <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Admin access code (optional)</span>
-                <div className="relative">
-                  <KeyRound className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <Input
-                    type="password"
-                    value={adminCode}
-                    onChange={(e) => setAdminCode(e.target.value)}
-                    placeholder="Required for console admin access"
                     className="h-11 rounded-xl border-slate-300 pl-9 focus-visible:ring-slate-400"
                   />
                 </div>

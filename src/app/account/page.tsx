@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Clock3, Mail, UserRound, Plus, Trash2, CheckCircle, AlertCircle, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Clock3, Mail, UserRound, Plus, Trash2, CheckCircle, AlertCircle, RotateCcw, Lock, Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -13,6 +13,7 @@ import {
   type AuthSession,
 } from '@/lib/auth-session';
 import { userFactsApi, type UserFact, type OnboardingStatus, type NewOnboardingStatus } from '@/lib/api/user-facts';
+import { userApi } from '@/lib/api/user';
 
 export default function AccountPage() {
   const router = useRouter();
@@ -24,6 +25,17 @@ export default function AccountPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [newFactKey, setNewFactKey] = useState('');
   const [newFactValue, setNewFactValue] = useState('');
+
+  // Password change state
+  const [showPasswordSection, setShowPasswordSection] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordSuccess, setPasswordSuccess] = useState('');
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   const fetchData = async () => {
     try {
@@ -129,6 +141,51 @@ export default function AccountPage() {
     }
   };
 
+  const handleChangePassword = async () => {
+    setPasswordError('');
+    setPasswordSuccess('');
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setPasswordError('All fields are required');
+      return;
+    }
+
+    if (newPassword.length < 8) {
+      setPasswordError('New password must be at least 8 characters');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordError('New passwords do not match');
+      return;
+    }
+
+    if (currentPassword === newPassword) {
+      setPasswordError('New password must be different from current password');
+      return;
+    }
+
+    setIsChangingPassword(true);
+    try {
+      await userApi.changePassword({
+        currentPassword,
+        newPassword,
+      });
+      setPasswordSuccess('Password changed successfully');
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setTimeout(() => {
+        setShowPasswordSection(false);
+        setPasswordSuccess('');
+      }, 2000);
+    } catch (error) {
+      setPasswordError(error instanceof Error ? error.message : 'Failed to change password');
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
+
   // Determine effective status
   const isComplete = newOnboardingStatus?.status === 'COMPLETED' || onboardingStatus?.isComplete;
   const isInProgress = newOnboardingStatus?.status === 'IN_PROGRESS';
@@ -193,6 +250,121 @@ export default function AccountPage() {
             <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Role</p>
             <p className="mt-1 text-sm text-slate-900">{session.role || 'user'}</p>
           </div>
+        </div>
+
+        {/* Change Password Section */}
+        <div className="mt-6">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-slate-900">Security</h2>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setShowPasswordSection(!showPasswordSection)}
+              className="flex items-center gap-2"
+            >
+              <Lock className="h-4 w-4" />
+              {showPasswordSection ? 'Cancel' : 'Change Password'}
+            </Button>
+          </div>
+
+          {showPasswordSection && (
+            <div className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              {passwordError && (
+                <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">
+                  {passwordError}
+                </div>
+              )}
+              {passwordSuccess && (
+                <div className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-600">
+                  {passwordSuccess}
+                </div>
+              )}
+
+              <div>
+                <label htmlFor="currentPassword" className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Current Password
+                </label>
+                <div className="relative">
+                  <Input
+                    id="currentPassword"
+                    type={showCurrentPassword ? 'text' : 'password'}
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    placeholder="Enter current password"
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700"
+                  >
+                    {showCurrentPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label htmlFor="newPassword" className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                  New Password
+                </label>
+                <div className="relative">
+                  <Input
+                    id="newPassword"
+                    type={showNewPassword ? 'text' : 'password'}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Enter new password (min 8 characters)"
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700"
+                  >
+                    {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label htmlFor="confirmPassword" className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Confirm New Password
+                </label>
+                <Input
+                  id="confirmPassword"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Confirm new password"
+                />
+              </div>
+
+              <div className="flex gap-2">
+                <Button
+                  onClick={handleChangePassword}
+                  size="sm"
+                  disabled={isChangingPassword}
+                  className="bg-slate-900 text-white hover:bg-slate-800"
+                >
+                  {isChangingPassword ? 'Changing...' : 'Change Password'}
+                </Button>
+                <Button
+                  onClick={() => {
+                    setShowPasswordSection(false);
+                    setCurrentPassword('');
+                    setNewPassword('');
+                    setConfirmPassword('');
+                    setPasswordError('');
+                    setPasswordSuccess('');
+                  }}
+                  variant="outline"
+                  size="sm"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* User Facts Section */}

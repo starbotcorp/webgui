@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { Settings } from '@/lib/types';
+import { settingsApi, UserSettings } from '@/lib/api/settings';
 
-export type ViewMode = 'chat' | 'inbox' | 'dashboard' | 'main';
+export type ViewMode = 'chat' | 'home' | 'main';
 
 interface UIState {
   selectedChatId: string | null;
@@ -29,13 +30,28 @@ interface UIState {
   dismissWelcomeBanner: () => void;
 
   settings: Settings;
+  settingsLoaded: boolean;
   updateSettings: (settings: Partial<Settings>) => void;
+  loadSettings: () => Promise<void>;
 
   draftInput: string;
   setDraftInput: (input: string) => void;
 }
 
-export const useUIStore = create<UIState>((set) => ({
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+
+function persistSettings(settings: Settings) {
+  if (persistTimer) clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => {
+    settingsApi.update({
+      mode: settings.mode,
+      auto: settings.auto,
+      thinking: settings.thinking,
+    }).catch((err) => console.error('[Settings] Failed to persist:', err));
+  }, 500);
+}
+
+export const useUIStore = create<UIState>((set, get) => ({
   selectedChatId: null,
   setSelectedChatId: (id) => set({ selectedChatId: id }),
 
@@ -63,10 +79,32 @@ export const useUIStore = create<UIState>((set) => ({
   settings: {
     mode: 'standard',
     auto: true,
-    thinking: false, // false = DeepSeek Chat (V3), true = DeepSeek Reasoner (R1)
+    thinking: false,
   },
-  updateSettings: (newSettings) =>
-    set((state) => ({ settings: { ...state.settings, ...newSettings } })),
+  settingsLoaded: false,
+  updateSettings: (newSettings) => {
+    set((state) => {
+      const merged = { ...state.settings, ...newSettings };
+      persistSettings(merged);
+      return { settings: merged };
+    });
+  },
+  loadSettings: async () => {
+    try {
+      const remote = await settingsApi.get();
+      set({
+        settings: {
+          mode: remote.mode,
+          auto: remote.auto,
+          thinking: remote.thinking,
+        },
+        settingsLoaded: true,
+      });
+    } catch (err) {
+      console.error('[Settings] Failed to load:', err);
+      set({ settingsLoaded: true });
+    }
+  },
 
   draftInput: '',
   setDraftInput: (input) => set({ draftInput: input }),

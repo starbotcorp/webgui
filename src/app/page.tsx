@@ -6,18 +6,16 @@ import { Sidebar } from '@/components/sidebar';
 import { ChatView } from '@/components/chat/chat-view';
 import { SettingsPanel } from '@/components/settings-panel';
 import { LogsPanel } from '@/components/logs-panel';
-import { InboxPanel } from '@/components/inbox-panel';
-import { DashboardPanel } from '@/components/dashboard-panel';
+import { HomePanel } from '@/components/home-panel';
 import { useUIStore } from '@/store/ui-store';
 import { readAuthSession } from '@/lib/auth-session';
 import { cn } from '@/lib/utils';
-import { Settings } from 'lucide-react';
 
 export default function Page() {
   const router = useRouter();
-  const { isSidebarOpen, toggleSidebar, selectedView, selectedChatId } = useUIStore();
+  const { isSidebarOpen, toggleSidebar, selectedView, selectedChatId, loadSettings } = useUIStore();
   const [checking, setChecking] = useState(true);
-  const [showSettingsModal, setShowSettingsModal] = useState(false);
+
 
   // Check authentication on mount
   useEffect(() => {
@@ -28,8 +26,9 @@ export default function Page() {
       router.push('/login');
     } else {
       setChecking(false);
+      loadSettings();
     }
-  }, [router]);
+  }, [router, loadSettings]);
 
   // Show nothing while checking auth
   if (checking) {
@@ -68,69 +67,15 @@ export default function Page() {
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Workspace</p>
                   <h1 className="font-semibold text-slate-900 leading-tight">
-                    {selectedView === 'inbox' ? 'Inbox' :
-                     selectedView === 'dashboard' ? 'Dashboard' :
+                    {selectedView === 'home' ? 'Home' :
                      selectedChatId ? 'Chat' : 'Starbot'}
                   </h1>
                 </div>
-                {selectedView === 'chat' && (
-                  <button
-                    onClick={() => setShowSettingsModal(true)}
-                    className="p-2 rounded-lg hover:bg-slate-100 transition-colors"
-                    title="Chat Settings"
-                  >
-                    <Settings className="h-5 w-5 text-slate-600" />
-                  </button>
-                )}
+
             </header>
 
-            {/* Settings Modal */}
-            {showSettingsModal && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 backdrop-blur-sm p-4">
-                <div className="bg-white rounded-2xl border border-slate-200 shadow-lg p-6 max-w-md w-full">
-                  <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-lg font-semibold text-slate-900">Chat Settings</h2>
-                    <button
-                      onClick={() => setShowSettingsModal(false)}
-                      className="text-slate-500 hover:text-slate-700"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">
-                        Delete All Messages
-                      </label>
-                      <p className="text-sm text-slate-600 mb-2">
-                        Clear all messages from this chat thread and restart it as a fresh onboarding conversation.
-                      </p>
-                      <button
-                        onClick={async () => {
-                          if (!confirm('Delete all messages in this chat? This cannot be undone.')) return;
-                          if (!selectedChatId) return;
-                          try {
-                            await fetch(`/api/chats/${selectedChatId}/messages`, { method: 'DELETE' });
-                            // Navigate to refresh the chat view
-                            window.location.reload();
-                          } catch (error) {
-                            console.error('Failed to delete messages:', error);
-                            alert('Failed to delete messages. Please try again.');
-                          }
-                        }}
-                        className="w-full px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-                      >
-                        Delete All Messages
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
             <main className="flex-1 overflow-hidden relative">
-                {selectedView === 'inbox' && <InboxPanel />}
-                {selectedView === 'dashboard' && <DashboardPanel />}
+                {selectedView === 'home' && <HomePanel />}
                 {selectedView === 'chat' && <ChatView />}
                 <SettingsPanel />
                 <LogsPanel />

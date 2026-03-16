@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useUIStore } from '@/store/ui-store';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -12,9 +12,10 @@ import {
 } from '@/components/ui/dialog';
 import { memoryApi } from '@/lib/api/memory';
 import { toast } from 'sonner';
-import { Brain, IdCard, MessageSquareText, Sparkles, X, Lightbulb } from 'lucide-react';
+import { settingsApi } from '@/lib/api/settings';
+import { Brain, IdCard, MessageSquareText, Sparkles, X, Lightbulb, Trash2, Settings2 } from 'lucide-react';
 
-type SettingsTab = 'routing' | 'identity' | 'chat';
+type SettingsTab = 'routing' | 'identity' | 'chat' | 'preferences';
 
 function formatTimestamp(value?: string) {
   if (!value) return 'Never';
@@ -32,6 +33,7 @@ export function SettingsPanel() {
     selectedChatId,
   } = useUIStore();
 
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<SettingsTab>('routing');
   const [identityDraft, setIdentityDraft] = useState('');
   const [chatMemoryDraft, setChatMemoryDraft] = useState('');
@@ -91,6 +93,34 @@ export function SettingsPanel() {
     },
   });
 
+  const restartOnboardingMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedChatId) throw new Error('Select a chat first');
+      await fetch(`/v1/chats/${selectedChatId}/messages`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      const res = await fetch(`/v1/chats/${selectedChatId}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          role: 'assistant',
+          content: "Hey! I know we've chatted before, but I'd love to check in and make sure I still have everything right about you. Feel free to update me on anything that's changed — your name, timezone, role, preferences — whatever feels relevant.\n\nWhat would you like to revisit first?",
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    },
+    onSuccess: () => {
+      toast.success('Onboarding restarted');
+      queryClient.invalidateQueries({ queryKey: ['messages', selectedChatId] });
+      setSettingsOpen(false);
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Failed to restart onboarding');
+    },
+  });
+
   return (
     <Dialog open={isSettingsOpen} onOpenChange={setSettingsOpen}>
       <DialogContent
@@ -116,7 +146,7 @@ export function SettingsPanel() {
         </DialogHeader>
 
         <div className="border-b border-slate-200 px-6 py-3">
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
             <Button
               type="button"
               variant="outline"
@@ -127,6 +157,17 @@ export function SettingsPanel() {
             >
               <Brain className="mr-2 h-4 w-4" />
               Routing
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setActiveTab('preferences')}
+              className={activeTab === 'preferences'
+                ? 'rounded-xl border-slate-900 bg-slate-900 text-white hover:bg-slate-800 hover:text-white'
+                : 'rounded-xl border-slate-300 bg-white text-slate-700 hover:bg-slate-50'}
+            >
+              <Settings2 className="mr-2 h-4 w-4" />
+              Preferences
             </Button>
             <Button
               type="button"
@@ -245,6 +286,99 @@ export function SettingsPanel() {
             </>
           )}
 
+          {activeTab === 'preferences' && (
+            <>
+              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="mb-1">
+                  <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+                    <Settings2 className="h-4 w-4 text-slate-600" />
+                    Synced Preferences
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    These settings are saved to your account and sync across all devices.
+                  </p>
+                </div>
+              </section>
+
+              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="mb-3">
+                  <h3 className="text-sm font-semibold text-slate-900">Default Reasoning Mode</h3>
+                  <p className="text-xs text-slate-500">Your preferred reasoning depth for new conversations.</p>
+                </div>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  {[
+                    { id: 'quick', label: 'Quick', description: 'Fastest responses, minimal depth.' },
+                    { id: 'standard', label: 'Standard', description: 'Balanced speed and quality.' },
+                    { id: 'deep', label: 'Deep', description: 'Most deliberate and thorough.' },
+                  ].map((mode) => (
+                    <Button
+                      key={mode.id}
+                      type="button"
+                      variant="outline"
+                      onClick={() => updateSettings({ mode: mode.id as 'quick' | 'standard' | 'deep' })}
+                      className={`h-auto items-start justify-start px-3 py-3 text-left rounded-xl border ${
+                        settings.mode === mode.id
+                          ? 'bg-slate-900 text-white border-slate-900 hover:bg-slate-800 hover:text-white'
+                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className="space-y-1">
+                        <span className="block text-sm font-medium">{mode.label}</span>
+                        <span className="block text-xs opacity-80">{mode.description}</span>
+                      </span>
+                    </Button>
+                  ))}
+                </div>
+              </section>
+
+              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="mb-3">
+                  <h3 className="text-sm font-semibold text-slate-900">Thinking Mode</h3>
+                  <p className="text-xs text-slate-500">Default thinking mode preference.</p>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => updateSettings({ thinking: true })}
+                    className={`flex-1 rounded-xl ${settings.thinking
+                      ? 'bg-slate-900 text-white border-slate-900 hover:bg-slate-800 hover:text-white'
+                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}
+                  >
+                    On (R1)
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => updateSettings({ thinking: false })}
+                    className={`flex-1 rounded-xl ${!settings.thinking
+                      ? 'bg-slate-900 text-white border-slate-900 hover:bg-slate-800 hover:text-white'
+                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}
+                  >
+                    Off (V3)
+                  </Button>
+                </div>
+              </section>
+
+              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="mb-3">
+                  <h3 className="text-sm font-semibold text-slate-900">Auto Routing</h3>
+                  <p className="text-xs text-slate-500">Automatically route based on request complexity.</p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => updateSettings({ auto: !settings.auto })}
+                  className={`rounded-xl ${settings.auto
+                    ? 'bg-slate-900 text-white border-slate-900 hover:bg-slate-800 hover:text-white'
+                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}
+                >
+                  {settings.auto ? 'Auto Routing Enabled' : 'Auto Routing Disabled'}
+                </Button>
+              </section>
+            </>
+          )}
+
           {activeTab === 'identity' && (
             <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
               <div>
@@ -276,44 +410,72 @@ export function SettingsPanel() {
           )}
 
           {activeTab === 'chat' && (
-            <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
-              <div>
-                <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
-                  <MessageSquareText className="h-4 w-4 text-slate-600" />
-                  Chat Memory (`MEMORY.md`)
-                </h3>
-                <p className="text-xs text-slate-500">
-                  {selectedChatId
-                    ? `Applies only to this chat. Updated: ${formatTimestamp(chatMemoryQuery.data?.updatedAt)}`
-                    : 'Select a chat to edit chat memory.'}
-                </p>
-              </div>
-
-              {selectedChatId ? (
-                <>
-                  <Textarea
-                    value={chatMemoryDraft}
-                    onChange={(event) => setChatMemoryDraft(event.target.value)}
-                    placeholder="Store thread-specific facts and decisions."
-                    className="min-h-[300px] rounded-xl border-slate-300 font-mono text-sm"
-                  />
-                  <div className="flex justify-end">
-                    <Button
-                      type="button"
-                      onClick={() => saveChatMemoryMutation.mutate(chatMemoryDraft)}
-                      disabled={saveChatMemoryMutation.isPending || chatMemoryQuery.isLoading}
-                      className="rounded-xl bg-slate-900 text-white hover:bg-slate-800"
-                    >
-                      {saveChatMemoryMutation.isPending ? 'Saving...' : 'Save Chat Memory'}
-                    </Button>
-                  </div>
-                </>
-              ) : (
-                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
-                  Create or select a chat, then reopen this tab to edit chat memory.
+            <>
+              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+                    <MessageSquareText className="h-4 w-4 text-slate-600" />
+                    Chat Memory (`MEMORY.md`)
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    {selectedChatId
+                      ? `Applies only to this chat. Updated: ${formatTimestamp(chatMemoryQuery.data?.updatedAt)}`
+                      : 'Select a chat to edit chat memory.'}
+                  </p>
                 </div>
+
+                {selectedChatId ? (
+                  <>
+                    <Textarea
+                      value={chatMemoryDraft}
+                      onChange={(event) => setChatMemoryDraft(event.target.value)}
+                      placeholder="Store thread-specific facts and decisions."
+                      className="min-h-[300px] rounded-xl border-slate-300 font-mono text-sm"
+                    />
+                    <div className="flex justify-end">
+                      <Button
+                        type="button"
+                        onClick={() => saveChatMemoryMutation.mutate(chatMemoryDraft)}
+                        disabled={saveChatMemoryMutation.isPending || chatMemoryQuery.isLoading}
+                        className="rounded-xl bg-slate-900 text-white hover:bg-slate-800"
+                      >
+                        {saveChatMemoryMutation.isPending ? 'Saving...' : 'Save Chat Memory'}
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+                    Create or select a chat, then reopen this tab to edit chat memory.
+                  </div>
+                )}
+              </section>
+
+              {selectedChatId && (
+                <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+                      <Trash2 className="h-4 w-4 text-slate-500" />
+                      Restart Onboarding
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      Clears this chat and starts a fresh onboarding conversation. Your existing facts stay active and can be updated.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      if (!confirm('Clear all messages and restart onboarding? This cannot be undone.')) return;
+                      restartOnboardingMutation.mutate();
+                    }}
+                    disabled={restartOnboardingMutation.isPending}
+                    className="rounded-xl border-slate-300 text-slate-700 hover:bg-slate-50"
+                  >
+                    {restartOnboardingMutation.isPending ? 'Restarting...' : 'Restart Onboarding'}
+                  </Button>
+                </section>
               )}
-            </section>
+            </>
           )}
         </div>
       </DialogContent>

@@ -23,7 +23,7 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
-import { Plus, MessageSquare, Folder as FolderIcon, ChevronDown, ChevronRight, Trash2, MoreVertical, Pencil, Loader2, Inbox, LayoutDashboard, Menu, Home } from 'lucide-react';
+import { Plus, MessageSquare, Folder as FolderIcon, ChevronDown, ChevronRight, Trash2, MoreVertical, Pencil, Loader2, LayoutDashboard, Menu, Home } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { readAuthSession } from '@/lib/auth-session';
 import { Chat } from '@/lib/types';
@@ -246,19 +246,10 @@ export function Sidebar() {
             )}
           </Button>
           <Button
-            variant={selectedView === 'inbox' ? 'default' : 'ghost'}
-            onClick={() => setSelectedView('inbox')}
+            variant={selectedView === 'home' ? 'default' : 'ghost'}
+            onClick={() => setSelectedView('home')}
             size="icon"
-            aria-label="Inbox"
-            className="rounded-xl"
-          >
-            <Inbox className="h-5 w-5" />
-          </Button>
-          <Button
-            variant={selectedView === 'dashboard' ? 'default' : 'ghost'}
-            onClick={() => setSelectedView('dashboard')}
-            size="icon"
-            aria-label="Dashboard"
+            aria-label="Home"
             className="rounded-xl"
           >
             <LayoutDashboard className="h-5 w-5" />
@@ -317,30 +308,21 @@ export function Sidebar() {
               <Home className="mr-2 h-4 w-4" />
             )}
             <div className="flex-1 min-w-0">
-              <span className="font-medium">Main Thread</span>
+              <span className="font-medium">{mainThread?.title || 'Main Thread'}</span>
             </div>
           </Button>
         </div>
 
-        {/* Inbox/Dashboard quick access */}
-        <div className="flex gap-2 mb-3">
+        {/* Home quick access */}
+        <div className="mb-3">
           <Button
-            variant={selectedView === 'inbox' ? 'default' : 'outline'}
-            onClick={() => setSelectedView('inbox')}
-            className="flex-1 justify-start"
-            size="sm"
-          >
-            <Inbox className="mr-2 h-4 w-4" />
-            Inbox
-          </Button>
-          <Button
-            variant={selectedView === 'dashboard' ? 'default' : 'outline'}
-            onClick={() => setSelectedView('dashboard')}
-            className="flex-1 justify-start"
+            variant={selectedView === 'home' ? 'default' : 'outline'}
+            onClick={() => setSelectedView('home')}
+            className="w-full justify-start"
             size="sm"
           >
             <LayoutDashboard className="mr-2 h-4 w-4" />
-            Dashboard
+            Home
           </Button>
         </div>
 
